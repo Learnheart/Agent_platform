@@ -3,7 +3,7 @@
 > **Phiên bản:** 1.0
 > **Ngày tạo:** 2026-03-25
 > **Tác giả:** AI Project Manager & Lead Architect
-> **Parent:** [Architecture Overview](../00-overview.md)
+> **Parent:** [Architecture Overview](00-overview.md)
 
 ---
 

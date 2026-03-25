@@ -3,30 +3,21 @@
 > **Phiên bản:** 1.0
 > **Ngày tạo:** 2026-03-25
 > **Tác giả:** AI Project Manager & Lead Architect
-> **Parent:** [Architecture Overview](../00-overview.md)
+> **Parent:** [Architecture Overview](00-overview.md)
 
 ---
 
 ## 1. Tổng Quan
 
-### 1.1 Vấn Đề Cần Giải Quyết
+### 1.1 Scope
 
-Agent Platform tạo ra nhiều loại dữ liệu xuyên suốt lifecycle: conversation logs, tool call records, LLM responses, cost metrics, guardrail decisions, memory entries. Dữ liệu này hiện nằm rải rác ở nhiều components (Guardrails audit, Event Emitter traces, Memory lifecycle). Cần một module thống nhất để:
+1. **Audit**: Consolidate mọi audit events vào một pipeline duy nhất (immutable, queryable)
+2. **Retention**: Enforce data lifecycle policies — giữ, xóa, archive
+3. **Classification**: Gắn nhãn sensitivity cho data (PII, confidential, internal, public)
+4. **Cost Accounting**: Aggregate cost data từ mọi session/agent/tenant
+5. **Lineage** (Phase 2): Track data flow xuyên suốt execution chain
 
-1. **Audit**: Consolidate mọi audit events vào một pipeline duy nhất, đảm bảo immutability và queryability
-2. **Retention**: Enforce data lifecycle policies — khi nào giữ, khi nào xóa, khi nào archive
-3. **Classification**: Gắn nhãn sensitivity cho data flowing through platform (PII, confidential, internal, public)
-4. **Cost Accounting**: Aggregate cost data từ mọi session/agent/tenant thành reports
-5. **Lineage** (Phase 2): Track data flow xuyên suốt execution chain — input nào dẫn đến output nào
-
-### 1.2 Thiết Kế: Module, Không Phải Service
-
-Governance được thiết kế như **internal module** trong Phase 1, với interface rõ ràng để tách thành service trong Phase 2 nếu cần.
-
-**Lý do:**
-- Phase 1 chưa có production data patterns → premature service extraction
-- Module = zero network overhead, zero deployment complexity
-- Interface-first design → swap implementation từ in-process sang network call khi cần
+### 1.2 Deployment Model
 
 ```
 Phase 1 (Module):
@@ -96,8 +87,6 @@ Phase 2 (Service, nếu cần):
 ---
 
 ## 3. Governance Port (Interface)
-
-Interface duy nhất mà các component khác sử dụng để tương tác với Governance module. Thiết kế theo Dependency Inversion — consumer phụ thuộc vào interface, không phải implementation.
 
 ```python
 class GovernancePort(Protocol):
@@ -180,10 +169,6 @@ class GovernancePort(Protocol):
 
 ### 4.1 Audit Sink
 
-Consolidate mọi audit events từ toàn bộ platform vào một pipeline duy nhất.
-
-**Vấn đề hiện tại:** Guardrails có `GuardrailAuditEntry`, Event Emitter có trace events, Session Manager có lifecycle events — 3 nguồn audit riêng biệt. Governance module thống nhất chúng.
-
 #### 4.1.1 Audit Event Model
 
 ```python
@@ -247,8 +232,6 @@ class AuditActor:
 ```
 
 #### 4.1.2 Write-Behind Buffer
-
-Audit writes không block execution path. Events được buffered rồi batch-write.
 
 ```python
 class AuditSink:
@@ -356,7 +339,36 @@ CREATE POLICY tenant_isolation ON audit_events
     USING (tenant_id = current_setting('app.current_tenant'));
 ```
 
-#### 4.1.4 Audit Query
+#### 4.1.4 Audit Log Partitioning
+
+```sql
+-- Partition audit_events by month for query performance and data retention
+CREATE TABLE audit_events (
+    id UUID NOT NULL DEFAULT gen_random_uuid(),
+    timestamp TIMESTAMPTZ NOT NULL,
+    tenant_id TEXT NOT NULL,
+    agent_id TEXT,
+    session_id TEXT,
+    step_index INT,
+    category TEXT NOT NULL,
+    action TEXT NOT NULL,
+    actor_type TEXT NOT NULL,
+    actor_id TEXT NOT NULL,
+    resource_type TEXT,
+    resource_id TEXT,
+    details JSONB DEFAULT '{}',
+    sensitivity TEXT NOT NULL DEFAULT 'internal',
+    outcome TEXT NOT NULL,
+    PRIMARY KEY (id, timestamp)
+) PARTITION BY RANGE (timestamp);
+
+-- Auto-create monthly partitions
+-- Managed by retention engine: drop partitions older than retention_period
+CREATE TABLE audit_events_2026_03 PARTITION OF audit_events
+    FOR VALUES FROM ('2026-03-01') TO ('2026-04-01');
+```
+
+#### 4.1.5 Audit Query
 
 ```python
 @dataclass
@@ -394,15 +406,12 @@ class AuditQueryEngine:
         """
         Complete audit timeline for a session — ordered chronologically.
         Includes: lifecycle events, LLM calls, tool calls, guardrail checks.
-        Used for debugging and compliance review.
         """
 ```
 
 ---
 
 ### 4.2 Retention Engine
-
-Enforce data lifecycle policies — tự động archive hoặc delete data theo rules.
 
 #### 4.2.1 Retention Policy Model
 
@@ -444,15 +453,15 @@ class RetentionDataType(str, Enum):
 
 #### 4.2.2 Default Retention Policies (Platform)
 
-| Data Type | Default Retention | Archive | Rationale |
-|---|---|---|---|
-| Session data (hot, Redis) | Session + 1h | No (ephemeral) | Cleanup after session ends |
-| Session data (warm, PG) | 90 days | Yes (S3) | Replay, debug, compliance |
-| Audit events | 365 days | Yes (S3) | Compliance requirement |
-| Trace spans | 30 days | No | Debugging, recent only |
-| Long-term memories | Per-agent config | Yes (S3) | Agent-managed lifecycle |
-| Cost records | Indefinite | No | Billing, analytics |
-| Tool invocation logs | 30 days | No | Debugging |
+| Data Type | Default Retention | Archive |
+|---|---|---|
+| Session data (hot, Redis) | Session + 1h | No (ephemeral) |
+| Session data (warm, PG) | 90 days | Yes (S3) |
+| Audit events | 365 days | Yes (S3) |
+| Trace spans | 30 days | No |
+| Long-term memories | Per-agent config | Yes (S3) |
+| Cost records | Indefinite | No |
+| Tool invocation logs | 30 days | No |
 
 #### 4.2.3 Retention Scheduler
 
@@ -482,8 +491,6 @@ class RetentionScheduler:
         """Preview what would be affected without actually deleting."""
 ```
 
-**Retention report:**
-
 ```python
 @dataclass
 class RetentionReport:
@@ -497,20 +504,59 @@ class RetentionReport:
     duration_seconds: float
 ```
 
+#### 4.2.4 Partition Drop Strategy
+
+Retention engine sử dụng `DROP PARTITION` thay vì `DELETE` rows cho audit_events:
+
+```sql
+-- Drop expired audit partitions (efficient O(1) vs row-by-row DELETE)
+-- Retention engine checks partition age against retention_period
+DROP TABLE IF EXISTS audit_events_2025_01;  -- Partition older than retention_period
+```
+
+```python
+class PartitionRetentionStrategy:
+    """
+    For partitioned tables (audit_events), drop entire partitions
+    instead of DELETE WHERE timestamp < cutoff.
+    """
+
+    async def cleanup_expired_partitions(
+        self,
+        table: str,
+        retention_days: int,
+    ) -> list[str]:
+        """
+        1. List all partitions for table
+        2. Identify partitions older than retention_days
+        3. If archive_before_delete: pg_dump partition → S3
+        4. DROP TABLE partition_name
+        5. Return list of dropped partition names
+        """
+
+    async def ensure_future_partitions(
+        self,
+        table: str,
+        months_ahead: int = 3,
+    ) -> list[str]:
+        """
+        Pre-create partitions for upcoming months.
+        Run as part of retention scheduler.
+        """
+```
+
 ---
 
 ### 4.3 Data Classifier
-
-Gắn nhãn sensitivity cho data flowing through platform. Rule-based trong Phase 1, ML-based trong Phase 2.
 
 #### 4.3.1 Classification Model
 
 ```python
 class DataSensitivity(str, Enum):
-    PUBLIC = "public"                # Có thể expose ra ngoài
-    INTERNAL = "internal"            # Chỉ nội bộ platform
-    CONFIDENTIAL = "confidential"    # Chứa business-sensitive data
-    RESTRICTED = "restricted"        # Chứa PII, credentials, hoặc regulated data
+    PUBLIC = "public"
+    INTERNAL = "internal"
+    CONFIDENTIAL = "confidential"
+    RESTRICTED = "restricted"              # PII, credentials, regulated data
 
 @dataclass
 class DataClassification:
@@ -552,8 +598,6 @@ class DataClassifier:
         3. CONFIDENTIAL if matches: financial amounts, account numbers
         4. CONFIDENTIAL if context.data_type == "tool_result" and tool is DB/API
         5. INTERNAL otherwise
-
-        Tenant can add custom rules via config.
         """
 
     async def classify_batch(
@@ -562,8 +606,6 @@ class DataClassifier:
     ) -> list[DataClassification]:
         """Batch classification for efficiency."""
 ```
-
-**Rule definition:**
 
 ```python
 @dataclass
@@ -581,8 +623,6 @@ class ClassificationRule:
 ---
 
 ### 4.4 Cost Aggregator
-
-Track và aggregate costs từ LLM calls và tool executions.
 
 ```python
 class CostAggregator:
@@ -647,8 +687,6 @@ class CostReport:
     breakdown: list[CostBreakdownItem]   # By model, tool, agent, etc.
 ```
 
-**Cost storage:**
-
 ```sql
 CREATE TABLE cost_events (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -689,10 +727,6 @@ CREATE TABLE cost_daily_aggregates (
 ---
 
 ### 4.5 Data Lineage (Phase 2)
-
-Track data flow xuyên suốt execution — input nào dẫn đến output nào.
-
-> **Phase note:** Data lineage cho Agent systems chưa có industry-standard patterns. Phase 1 thu thập đủ raw data (OTel traces, audit events) để build lineage graph trong Phase 2 khi đã hiểu rõ production patterns.
 
 #### 4.5.1 Lineage Model
 
@@ -783,9 +817,7 @@ class LineageBuilder:
 
 ---
 
-## 5. Integration: How Governance Connects to Other Components
-
-### 5.1 Integration Points
+## 5. Integration Points
 
 ```
 ┌──────────────┐
@@ -817,19 +849,15 @@ class LineageBuilder:
 └──────────────┘                           └───────────────┘
 ```
 
-### 5.2 Event Bus Integration
-
-Governance module vừa được gọi trực tiếp (cho real-time operations) vừa consume events từ bus (cho background processing).
+### 5.1 Event Bus Integration
 
 ```python
 # Direct call (real-time, in execution path)
-# Used for: audit recording, cost tracking, classification
 await governance.record_audit(event)    # Non-blocking (write-behind)
 await governance.track_cost(cost_event) # Non-blocking (Redis counter)
 result = await governance.classify(content, ctx)  # Sync, fast (<2ms)
 
 # Event Bus consumer (background, async)
-# Used for: lineage building, cost aggregation rollups, retention scheduling
 class GovernanceEventConsumer:
     async def on_event(self, event: AgentEvent) -> None:
         match event.type:
@@ -898,6 +926,13 @@ Scheduler       Governance         PostgreSQL          S3 (Archive)      Audit
  │                 │ │                                   │   │               │
  │                 │ └───────────────────────────────────┘   │               │
  │                 │                                         │               │
+ │                 │ ┌─ Policy: audit_events (365 days) ─┐   │               │
+ │                 │ │                                    │   │               │
+ │                 │ │──DROP PARTITION expired────→│      │   │               │
+ │                 │ │◄──dropped──────────────────│      │   │               │
+ │                 │ │                                    │   │               │
+ │                 │ └────────────────────────────────────┘   │               │
+ │                 │                                         │               │
  │                 │ ┌─ Policy: trace_spans (30 days) ──┐   │               │
  │                 │ │  ... (similar flow, no archive) ..│   │               │
  │                 │ └───────────────────────────────────┘   │               │
@@ -943,11 +978,6 @@ Executor         Memory Mgr       Governance        Audit Sink
  │                  │                │                  │
  │──record_audit(LLM_CALL,          │                  │
  │   sensitivity:CONFIDENTIAL)──────────────────────→│
- │                  │                │                  │
- │  [Classification informs:                           │
- │   - Audit event tagging                             │
- │   - PII masking in logs                             │
- │   - Retention policy matching]                      │
 ```
 
 ---
@@ -1013,8 +1043,6 @@ class CostConfig:
 
 ### 7.2 Tenant-Level Overrides
 
-Tenants có thể override một số governance settings:
-
 ```json
 {
   "tenant_id": "acme-corp",
@@ -1048,19 +1076,19 @@ Tenants có thể override một số governance settings:
 
 ## 8. Tech Stack
 
-| Component | Technology | Phase | Lý do |
-|-----------|-----------|-------|-------|
-| **Audit storage** | PostgreSQL (partitioned, append-only) | 1 | Queryable, immutable with triggers, partition by month |
-| **Audit buffer** | In-memory buffer (asyncio.Queue) | 1 | Zero dependency, fast, sufficient for single-process |
-| **Cost counters (real-time)** | Redis (INCR, HSET) | 1 | Atomic counters, sub-ms |
-| **Cost aggregates** | PostgreSQL (materialized table) | 1 | Durable, queryable reports |
-| **Classification engine** | Regex + custom rules (Python) | 1 | Zero dependency, < 2ms, deterministic |
-| **Classification ML** | Fine-tuned classifier (Phase 2) | 2 | Higher accuracy for nuanced content |
-| **Retention scheduler** | asyncio background task / APScheduler | 1 | Lightweight, sufficient for Phase 1 |
-| **Archive storage** | S3 / GCS (via boto3/google-cloud-storage) | 1 | Cold storage for archived data |
-| **Lineage storage** | PostgreSQL (adjacency list model) | 2 | Reuse existing infra |
-| **Lineage query** | Recursive CTE (PostgreSQL) | 2 | Graph traversal in SQL |
-| **Governance interface** | Python Protocol (ABC) | 1 | Dependency inversion, swappable implementation |
+| Component | Technology | Phase |
+|-----------|-----------|-------|
+| **Audit storage** | PostgreSQL (partitioned, append-only) | 1 |
+| **Audit buffer** | In-memory buffer (asyncio.Queue) | 1 |
+| **Cost counters (real-time)** | Redis (INCR, HSET) | 1 |
+| **Cost aggregates** | PostgreSQL (materialized table) | 1 |
+| **Classification engine** | Regex + custom rules (Python) | 1 |
+| **Classification ML** | Fine-tuned classifier (Phase 2) | 2 |
+| **Retention scheduler** | asyncio background task / APScheduler | 1 |
+| **Archive storage** | S3 / GCS (via boto3/google-cloud-storage) | 1 |
+| **Lineage storage** | PostgreSQL (adjacency list model) | 2 |
+| **Lineage query** | Recursive CTE (PostgreSQL) | 2 |
+| **Governance interface** | Python Protocol (ABC) | 1 |
 
 ---
 
@@ -1079,7 +1107,7 @@ Tenants có thể override một số governance settings:
 | retention_run (per policy) | < 60s | Depends on data volume, batched |
 | lineage query (depth 3) | < 200ms | Recursive CTE (Phase 2) |
 
-**Overhead constraint:** Governance module must add **< 1ms total latency** to the execution hot path (via non-blocking buffer + async writes).
+Overhead constraint: Governance module < 1ms total latency on execution hot path (non-blocking buffer + async writes).
 
 ---
 

@@ -1,9 +1,8 @@
 # Thiết Kế Chi Tiết: Guardrails Engine
 
-> **Phiên bản:** 1.0
+> **Phiên bản:** 1.1
 > **Ngày tạo:** 2026-03-25
-> **Tác giả:** AI Project Manager & Lead Architect
-> **Parent:** [Architecture Overview](../00-overview.md)
+> **Parent:** [Architecture Overview](00-overview.md)
 
 ---
 
@@ -18,6 +17,7 @@
 │  │   User Input ──→ ┌────────────┐ ──→ ┌────────────┐ ──→ ┌──────────────┐    │   │
 │  │                   │ Schema     │     │ Content    │     │ Injection    │    │   │
 │  │                   │ Validator  │     │ Filter     │     │ Detector     │    │   │
+│  │                   │ [Hard]     │     │ [Soft]     │     │ [Soft+CB]    │    │   │
 │  │                   └────────────┘     └────────────┘     └──────┬───────┘    │   │
 │  │                                                                 │            │   │
 │  └─────────────────────────────────────────────────────────────────┼────────────┘   │
@@ -27,7 +27,7 @@
 │  │                                                                               │  │
 │  │   ┌─────────────────┐   ┌─────────────────┐   ┌────────────────────────┐     │  │
 │  │   │ Tool Permission  │   │ Budget           │   │ Rate Limit             │     │  │
-│  │   │ Enforcer        │   │ Enforcer         │   │ Enforcer               │     │  │
+│  │   │ Enforcer [Hard]  │   │ Enforcer [Hard]  │   │ Enforcer [Hard]        │     │  │
 │  │   │                 │   │                   │   │                        │     │  │
 │  │   │ - Agent-level   │   │ - Token budget    │   │ - Per-tenant           │     │  │
 │  │   │ - Tenant-level  │   │ - Cost budget     │   │ - Per-agent            │     │  │
@@ -36,8 +36,8 @@
 │  │                                                                               │  │
 │  │   ┌─────────────────┐   ┌─────────────────┐                                  │  │
 │  │   │ HITL Gate        │   │ Custom Rule      │                                  │  │
-│  │   │ (Human-in-the-  │   │ Engine           │                                  │  │
-│  │   │  Loop)           │   │ (User-defined)   │                                  │  │
+│  │   │ [Configurable]   │   │ Engine [Soft]    │                                  │  │
+│  │   │                  │   │ (Phase 2)        │                                  │  │
 │  │   └─────────────────┘   └─────────────────┘                                  │  │
 │  └──────────────────────────────────────────────────────────────────────────────┘  │
 │                                                                     │                │
@@ -47,6 +47,7 @@
 │  │   LLM Output ──→ ┌────────────┐ ──→ ┌────────────┐ ──→ ┌──────────────┐     │  │
 │  │                   │ Response   │     │ PII        │     │ Canary       │     │  │
 │  │                   │ Filter     │     │ Detector   │     │ Monitor      │     │  │
+│  │                   │ [Soft]     │     │ [Soft]     │     │ [Soft]       │     │  │
 │  │                   └────────────┘     └────────────┘     └──────────────┘     │  │
 │  │                                                                               │  │
 │  └──────────────────────────────────────────────────────────────────────────────┘  │
@@ -61,15 +62,40 @@
 
 ---
 
+## Guardrail Classification
+
+| Type | Behavior | Failure Mode | Components |
+|------|----------|-------------|------------|
+| **Hard** (fail-closed) | Phải pass, stateless, in-process | Service unavailable → reject request | Schema Validator, Tool Permission, Budget Enforcer |
+| **Soft** (fail-open) | Best-effort, degrade gracefully | Service unavailable → allow + log warning | Content Filter, Injection Detector, PII Detector, Canary Monitor |
+
+Hard guardrails: zero external dependency, sub-ms, không có lý do để fail.
+Soft guardrails: có thể depend external service hoặc model inference, chấp nhận degrade.
+
+### Circuit Breaker cho Soft Guardrails
+
+```python
+class GuardrailCircuitBreaker:
+    """Circuit breaker for soft guardrails.
+    States: CLOSED (normal) → OPEN (bypassing) → HALF_OPEN (testing)"""
+
+    failure_threshold: int = 5          # consecutive failures to open
+    recovery_timeout_seconds: int = 60  # time in OPEN before trying HALF_OPEN
+    half_open_max_calls: int = 3        # calls to test in HALF_OPEN
+
+    async def execute(self, check_fn: Callable, fallback: GuardrailResult) -> GuardrailResult:
+        """If CLOSED: run check_fn normally.
+        If OPEN: return fallback (allow + log).
+        If HALF_OPEN: run check_fn, track success/failure."""
+```
+
+---
+
 ## 2. Component Descriptions
 
 ### 2.1 Inbound Pipeline
 
-Chạy **trước** khi input được gửi đến LLM. Mỗi check là một middleware trong pipeline, xử lý tuần tự. Nếu bất kỳ check nào fail → request bị reject ngay, không gọi LLM.
-
-#### 2.1.1 Schema Validator
-
-**Mục đích:** Đảm bảo input tuân thủ format mong đợi trước khi đi sâu hơn.
+#### 2.1.1 Schema Validator — Hard Guardrail (Phase 1)
 
 | Kiểm tra | Chi tiết |
 |----------|----------|
@@ -87,19 +113,13 @@ class SchemaValidator:
         """
 ```
 
-#### 2.1.2 Content Filter (Phase 2)
-
-> **Phase note:** Đẩy sang Phase 2 sau review. Phase 1 personas (Marcus, Elena) cần budget limits + tool permissions, không cần content classification. Regex-based keyword blocking đủ cho Phase 1 nếu cần — nằm trong Schema Validator.
-
-**Mục đích:** Lọc nội dung vi phạm policy (toxic, NSFW, off-topic) trước khi đến LLM.
+#### 2.1.2 Content Filter — Soft Guardrail (Phase 2)
 
 | Mode | Hành vi |
 |------|---------|
 | **Block** | Reject input, trả error cho client |
 | **Warn** | Cho qua nhưng log warning + emit event |
 | **Redact** | Xóa/thay thế phần vi phạm, tiếp tục xử lý |
-
-**Implementation:** Sử dụng lightweight classifier model (distilbert-based hoặc regex patterns cho Phase 1, specialized model cho Phase 2).
 
 ```python
 class ContentFilter:
@@ -110,20 +130,14 @@ class ContentFilter:
         """
 ```
 
-#### 2.1.3 Prompt Injection Detector
+#### 2.1.3 Prompt Injection Detector — Soft Guardrail + Circuit Breaker
 
-**Mục đích:** Phát hiện các nỗ lực prompt injection — input cố gắng override system instructions hoặc điều khiển agent thực hiện hành động trái phép.
-
-**Detection strategies (layered):**
-
-| Strategy | Mô tả | Precision | Recall | Phase |
-|----------|--------|-----------|--------|-------|
-| **Heuristic rules** | Regex patterns cho common injection phrases ("ignore previous instructions", "you are now...") | Trung bình | Thấp | **1** |
-| **Delimiter analysis** | Phát hiện attempts to break prompt structure (closing XML tags, markdown headers) | Cao | Thấp | **1** |
-| **Classifier model** | Fine-tuned model phân loại input là benign vs injection | Cao | Cao | **2** |
-| **Canary tokens** | Embed unique tokens trong system prompt; nếu xuất hiện trong output → leaked | Rất cao | N/A (detection) | **2** |
-
-> **Phase note:** Phase 1 chỉ implement heuristic rules + delimiter analysis (zero dependency, < 5ms). Classifier model và canary tokens đẩy sang Phase 2 — giảm complexity và dependency (không cần ONNX runtime, fine-tuned model trong Phase 1).
+| Strategy | Precision | Recall | Phase |
+|----------|-----------|--------|-------|
+| **Heuristic rules** | Trung bình | Thấp | **1** |
+| **Delimiter analysis** | Cao | Thấp | **1** |
+| **Classifier model** | Cao | Cao | **2** |
+| **Canary tokens** | Rất cao | N/A (detection) | **2** |
 
 ```python
 class InjectionDetector:
@@ -152,24 +166,16 @@ class InjectionDetector:
 
 ### 2.2 Policy Engine
 
-Chạy **trong quá trình** execution, kiểm tra mỗi action trước khi thực thi.
-
-#### 2.2.1 Tool Permission Enforcer
-
-**Mục đích:** Kiểm soát agent được phép gọi tool nào, với tham số nào.
-
-**Permission layers (evaluated top-down):**
+#### 2.2.1 Tool Permission Enforcer — Hard Guardrail (Phase 1)
 
 ```
 ┌─────────────────────────────────────────────┐
-│ Tenant Policy                                │  "Tenant X chỉ dùng read-only tools"
-│   └─ Agent Policy                            │  "Agent A được dùng DB + GitHub"
-│       └─ Session Policy                      │  "Session này là readonly"
-│           └─ Action Policy                   │  "Tool write:database cần approval"
+│ Tenant Policy                                │
+│   └─ Agent Policy                            │
+│       └─ Session Policy                      │
+│           └─ Action Policy                   │
 └─────────────────────────────────────────────┘
 ```
-
-**Data Model:**
 
 ```python
 @dataclass
@@ -188,8 +194,6 @@ class PermissionConstraints:
     denied_parameters: dict | None        # JSONSchema of explicitly denied params
     time_window: str | None               # "business_hours_only"
 ```
-
-**Evaluation:**
 
 ```python
 class ToolPermissionEnforcer:
@@ -212,9 +216,7 @@ class ToolPermissionEnforcer:
         """
 ```
 
-#### 2.2.2 Budget Enforcer
-
-**Mục đích:** Ngăn chặn chi phí vượt kiểm soát từ agentic loops.
+#### 2.2.2 Budget Enforcer — Hard Guardrail (Phase 1)
 
 | Budget Type | Scope | Kiểm tra |
 |-------------|-------|----------|
@@ -244,16 +246,14 @@ class BudgetEnforcer:
         """
 ```
 
-**Graceful degradation flow:**
-
 ```
-Budget at 80% → Log warning
-Budget at 90% → Inject instruction: "Bạn sắp hết budget. Hãy tóm tắt kết quả hiện tại."
-Budget at 95% → Inject instruction: "Đây là bước cuối cùng. Trả kết quả ngay."
+Budget at 80%  → Log warning
+Budget at 90%  → Inject instruction: "Bạn sắp hết budget. Hãy tóm tắt kết quả hiện tại."
+Budget at 95%  → Inject instruction: "Đây là bước cuối cùng. Trả kết quả ngay."
 Budget at 100% → Force stop, return partial result
 ```
 
-#### 2.2.3 Rate Limit Enforcer
+#### 2.2.3 Rate Limit Enforcer — Hard Guardrail (Phase 1)
 
 | Dimension | Default | Configurable |
 |-----------|---------|-------------|
@@ -262,11 +262,9 @@ Budget at 100% → Force stop, return partial result
 | LLM calls per minute per tenant | 300 | Yes |
 | Concurrent sessions per tenant | 100 | Yes |
 
-**Implementation:** Token bucket algorithm trên Redis.
+Token bucket algorithm trên Redis.
 
-#### 2.2.4 Human-in-the-Loop (HITL) Gate
-
-**Mục đích:** Tạm dừng execution, chờ human approval cho actions nhạy cảm.
+#### 2.2.4 Human-in-the-Loop (HITL) Gate — Configurable (Phase 1)
 
 ```python
 class HITLGate:
@@ -286,7 +284,7 @@ class HITLGate:
         """
 ```
 
-**Approval payload gửi cho human:**
+**Approval payload:**
 
 ```json
 {
@@ -304,11 +302,7 @@ class HITLGate:
 }
 ```
 
-#### 2.2.5 Custom Rule Engine (Phase 2)
-
-> **Phase note:** CEL rule engine đẩy sang Phase 2 sau review. Phase 1 personas không cần dynamic rule definition — static config (tool_permissions + budget) đủ dùng. CEL thêm dependency nặng (cel-python) và complexity mà chưa có user nào cần trong MVP.
-
-**Mục đích:** Cho phép tenant/admin define rules tùy chỉnh mà không cần code.
+#### 2.2.5 Custom Rule Engine — Soft Guardrail (Phase 2)
 
 ```python
 @dataclass
@@ -349,9 +343,7 @@ rules = [
 
 ### 2.3 Outbound Pipeline
 
-Chạy **sau** khi LLM trả response, trước khi gửi về client.
-
-#### 2.3.1 Response Filter
+#### 2.3.1 Response Filter — Soft Guardrail (Phase 2)
 
 | Kiểm tra | Hành vi |
 |----------|---------|
@@ -360,11 +352,7 @@ Chạy **sau** khi LLM trả response, trước khi gửi về client.
 | Hallucination indicators | Warn (khi confidence thấp) |
 | Response length limit | Truncate + warn |
 
-#### 2.3.2 PII Detector (Phase 2)
-
-> **Phase note:** Presidio-based PII detection đẩy sang Phase 2. Phase 1 chỉ cần regex-based masking cho patterns rõ ràng (email, phone, credit card) trong log output — nằm trong structured logging layer, không cần Presidio dependency.
-
-**Mục đích:** Phát hiện và mask PII trong output trước khi trả về client hoặc ghi vào logs.
+#### 2.3.2 PII Detector — Soft Guardrail (Phase 2)
 
 | PII Type | Pattern | Mask |
 |----------|---------|------|
@@ -394,17 +382,7 @@ class PIIDetector:
         """
 ```
 
-#### 2.3.3 Canary Monitor (Phase 2)
-
-> **Phase note:** Canary tokens đẩy sang Phase 2 cùng với classifier-based injection detection.
-
-**Mục đích:** Phát hiện system prompt leakage.
-
-**Mechanism:**
-1. Khi tạo session, embed một unique canary token vào system prompt
-2. Monitor mọi output cho sự xuất hiện của canary token
-3. Nếu phát hiện → system prompt đã bị leak (có thể do prompt injection)
-4. Action: Block response + alert + log incident
+#### 2.3.3 Canary Monitor — Soft Guardrail (Phase 2)
 
 ```python
 class CanaryMonitor:
@@ -423,8 +401,6 @@ class CanaryMonitor:
 
 ### 2.4 Audit Trail
 
-**Mọi guardrail check** đều được log bất kể kết quả.
-
 ```python
 @dataclass
 class GuardrailAuditEntry:
@@ -435,14 +411,14 @@ class GuardrailAuditEntry:
     agent_id: str
     step_index: int
     check_type: str          # "schema_validation", "injection_detection", "tool_permission", etc.
-    check_name: str          # Specific check name
+    check_name: str
     result: str              # "pass" | "fail" | "warn" | "require_approval"
-    details: dict            # Check-specific details
+    details: dict
     action_taken: str        # "allowed" | "blocked" | "masked" | "escalated"
-    latency_ms: float        # How long the check took
+    latency_ms: float
 ```
 
-**Storage:** PostgreSQL append-only table (no UPDATE/DELETE allowed).
+PostgreSQL append-only table (no UPDATE/DELETE allowed).
 
 ---
 
@@ -457,26 +433,24 @@ User            API GW         Guardrails Engine                              LL
  │                │──validate──→   │                                            │
  │                │              ┌─▼──────────────┐                            │
  │                │              │ Schema Validator │                            │
- │                │              │ ✅ format OK     │                            │
+ │                │              │ [Hard] pass/fail │                            │
  │                │              └─┬──────────────┘                            │
  │                │              ┌─▼──────────────┐                            │
  │                │              │ Content Filter  │                            │
- │                │              │ ✅ content clean │                            │
+ │                │              │ [Soft] pass/warn │                            │
  │                │              └─┬──────────────┘                            │
  │                │              ┌─▼──────────────────┐                        │
  │                │              │ Injection Detector   │                        │
- │                │              │ Heuristic: ✅ pass   │                        │
- │                │              │ Classifier: ✅ 0.12  │                        │
+ │                │              │ [Soft+CB] pass/fail  │                        │
  │                │              └─┬──────────────────┘                        │
  │                │              ┌─▼──────────────┐                            │
  │                │              │ Budget Check    │                            │
- │                │              │ ✅ 2,400/10,000 │                            │
- │                │              │    tokens used  │                            │
+ │                │              │ [Hard] pass/fail │                            │
  │                │              └─┬──────────────┘                            │
  │                │                │                                            │
  │                │                │──ALL PASSED──→ forward to executor ──────→│
  │                │                │                                            │
- │                │                │──audit log (5 entries)──→ Trace Store      │
+ │                │                │──audit log (entries)──→ Trace Store        │
  │                │                │                                            │
 ```
 
@@ -490,21 +464,19 @@ Executor         Guardrails Engine                                    Tool Runti
  │   params: {...}}   │                                                    │
  │                  ┌─▼─────────────────┐                                 │
  │                  │ Tool Permission    │                                 │
- │                  │ Check              │                                 │
- │                  │ ✅ Agent allowed   │                                 │
- │                  │ ✅ Params valid    │                                 │
+ │                  │ [Hard] check       │                                 │
  │                  └─┬─────────────────┘                                 │
  │                  ┌─▼─────────────────┐                                 │
  │                  │ Rate Limit Check   │                                 │
- │                  │ ✅ 5/30 calls used │                                 │
+ │                  │ [Hard] check       │                                 │
  │                  └─┬─────────────────┘                                 │
  │                  ┌─▼─────────────────┐                                 │
  │                  │ Custom Rules       │                                 │
- │                  │ ✅ No rules match  │                                 │
+ │                  │ [Soft] check       │                                 │
  │                  └─┬─────────────────┘                                 │
  │                  ┌─▼─────────────────┐                                 │
  │                  │ HITL Required?     │                                 │
- │                  │ ❌ No (read-only)  │                                 │
+ │                  │ [Configurable]     │                                 │
  │                  └─┬─────────────────┘                                 │
  │                    │                                                    │
  │                    │──ALLOW──→ forward ─────────────────────────────────→│
@@ -513,7 +485,7 @@ Executor         Guardrails Engine                                    Tool Runti
  │                    │                                                    │
 ```
 
-### 3.3 HITL Approval Flow (High-Risk Action)
+### 3.3 HITL Approval Flow
 
 ```
 Executor      Guardrails        Session Svc       Queue        Human         WebSocket
@@ -524,7 +496,7 @@ Executor      Guardrails        Session Svc       Queue        Human         Web
  │             ┌─▼───────────┐     │                │            │              │
  │             │ Permission   │     │                │            │              │
  │             │ Check        │     │                │            │              │
- │             │ ⚠ REQUIRE    │     │                │            │              │
+ │             │ REQUIRE      │     │                │            │              │
  │             │   APPROVAL   │     │                │            │              │
  │             └─┬───────────┘     │                │            │              │
  │               │                  │                │            │              │
@@ -562,16 +534,15 @@ LLM GW          Executor         Guardrails Engine                    Client
  │                │──check output─────→│                                 │
  │                │                  ┌─▼─────────────────┐              │
  │                │                  │ Response Filter    │              │
- │                │                  │ ✅ Content safe    │              │
+ │                │                  │ [Soft] check       │              │
  │                │                  └─┬─────────────────┘              │
  │                │                  ┌─▼─────────────────┐              │
  │                │                  │ PII Detector       │              │
- │                │                  │ ⚠ Email found      │              │
- │                │                  │ → masked in logs   │              │
+ │                │                  │ [Soft] scan+mask   │              │
  │                │                  └─┬─────────────────┘              │
  │                │                  ┌─▼─────────────────┐              │
  │                │                  │ Canary Monitor     │              │
- │                │                  │ ✅ No leakage      │              │
+ │                │                  │ [Soft] check       │              │
  │                │                  └─┬─────────────────┘              │
  │                │                    │                                 │
  │                │◄──result───────────│                                 │
@@ -653,20 +624,20 @@ class InjectionDetectionConfig:
 
 ## 5. Tech Stack
 
-| Component | Technology | Phase | Lý do |
-|-----------|-----------|-------|-------|
-| **Pipeline framework** | Python async middleware chain | 1 | Simple, fast, extensible |
-| **Schema validation** | Pydantic v2 | 1 | Native to FastAPI, fast |
-| **Injection detection (heuristic)** | Regex + custom patterns | 1 | Zero dependency, fast |
-| **Injection detection (classifier)** | Distil-BERT fine-tuned (ONNX) | 2 | Local inference, <10ms |
-| **Content filtering** | OpenAI Moderation API / local model | 2 | Classifier-based filtering |
-| **PII detection** | Presidio (Microsoft, OSS) | 2 | Mature, extensible, multi-language |
-| **Rate limiting** | Redis + token bucket algorithm | 1 | Distributed, fast |
-| **Budget tracking** | Redis (counters) + PostgreSQL (aggregates) | 1 | Real-time + durable |
-| **Custom rule engine** | CEL (Common Expression Language) | 2 | Google-backed, sandboxed, fast (was Phase 1) |
-| **HITL notifications** | WebSocket + Webhook | 1 | Real-time + async delivery |
-| **Audit storage** | PostgreSQL (append-only table) | 1 | Queryable, immutable with triggers |
-| **Advanced classifier** | Fine-tuned guardrail model (self-hosted) | 2 | Higher accuracy, custom categories |
+| Component | Technology | Phase |
+|-----------|-----------|-------|
+| **Pipeline framework** | Python async middleware chain | 1 |
+| **Schema validation** | Pydantic v2 | 1 |
+| **Injection detection (heuristic)** | Regex + custom patterns | 1 |
+| **Injection detection (classifier)** | Distil-BERT fine-tuned (ONNX) | 2 |
+| **Content filtering** | OpenAI Moderation API / local model | 2 |
+| **PII detection** | Presidio (Microsoft, OSS) | 2 |
+| **Rate limiting** | Redis + token bucket algorithm | 1 |
+| **Budget tracking** | Redis (counters) + PostgreSQL (aggregates) | 1 |
+| **Custom rule engine** | CEL (Common Expression Language) | 2 |
+| **HITL notifications** | WebSocket + Webhook | 1 |
+| **Audit storage** | PostgreSQL (append-only table) | 1 |
+| **Advanced classifier** | Fine-tuned guardrail model (self-hosted) | 2 |
 
 ---
 
@@ -691,10 +662,15 @@ class InjectionDetectionConfig:
 
 ## 7. Error Handling
 
-| Scenario | Hành vi |
-|----------|---------|
-| Guardrail service unavailable | **Fail-closed** — reject request, log error |
-| Injection detector timeout | Proceed with warning + extra monitoring |
-| Budget check Redis unavailable | Use local cache (stale-ok for ~1 min) + log |
-| HITL approval timeout | Configurable: auto-reject (default) or auto-approve |
-| Custom rule evaluation error | Skip rule + warn + log (never block on broken rule) |
+| Scenario | Classification | Behavior |
+|----------|---------------|----------|
+| Schema validation failure | Hard | Reject request (400) |
+| Tool permission denied | Hard | Block tool call, return error to LLM |
+| Budget exceeded | Hard | Graceful termination |
+| Injection detector timeout | Soft | Allow + log warning + emit alert event |
+| Injection detector unavailable | Soft | Allow + log warning + circuit breaker opens |
+| Content filter unavailable | Soft | Allow + log warning |
+| PII detector unavailable | Soft | Allow + log warning (no masking) |
+| Rate limit Redis unavailable | Hard | Use local cache (~1min stale) + log |
+| HITL approval timeout | Configurable | Default: auto-reject |
+| Custom rule evaluation error | Soft | Skip rule + warn + log |

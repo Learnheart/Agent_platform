@@ -10,17 +10,17 @@
 
 ### Priority Matrix
 
-| Priority | Use Case | Phase | Lý do |
-|----------|----------|-------|-------|
-| **P0** | Customer Support Automation | 1-2 | Thị trường lớn nhất, ROI rõ ràng |
-| **P0** | Custom Agent Building (Developer) | 1 | Platform adoption phụ thuộc DX |
-| **P1** | IT Helpdesk Agents | 2 | High demand enterprise, reuse CS patterns |
-| **P1** | Document Processing | 2 | High-volume, ROI đo lường được |
-| **P2** | Data Analysis Agents | 2-3 | Growing demand, complex security |
-| **P2** | Code Generation / DevOps | 2-3 | Developer community interest |
-| **P2** | Sales/Marketing Automation | 2-3 | Market lớn nhưng crowded |
-| **P3** | Compliance/Audit Agents | 3 | High value, cần domain modeling sâu |
-| **P3** | Agent Marketplace | 3 | Cần ecosystem scale |
+| Priority | Use Case | Phase |
+|----------|----------|-------|
+| **P0** | Customer Support Automation | 1-2 |
+| **P0** | Custom Agent Building (Developer) | 1 |
+| **P1** | IT Helpdesk Agents | 2 |
+| **P1** | Document Processing | 2 |
+| **P2** | Data Analysis Agents | 2-3 |
+| **P2** | Code Generation / DevOps | 2-3 |
+| **P2** | Sales/Marketing Automation | 2-3 |
+| **P3** | Compliance/Audit Agents | 3 |
+| **P3** | Agent Marketplace | 3 |
 
 ---
 
@@ -44,10 +44,10 @@
 | ID | Requirement | Priority | Phase |
 |----|-------------|----------|-------|
 | FR-EE-01 | ReAct execution loop (Thought → Action → Observation) | P0 | 1 |
-| FR-EE-02 | Plan-then-Execute pattern (plan → sub-tasks → execute) | P0 | 1 |
+| FR-EE-02 | Plan-then-Execute pattern (plan → sub-tasks → execute) | P1 | 2 |
 | FR-EE-03 | Checkpoint sau mỗi step thành công | P0 | 1 |
 | FR-EE-04 | Resume từ checkpoint sau failure | P0 | 1 |
-| FR-EE-05 | Streaming output (WebSocket/SSE) | P0 | 1 |
+| FR-EE-05 | Streaming output (SSE Phase 1, WebSocket Phase 2) | P0 | 1 |
 | FR-EE-06 | Queue-based async execution | P0 | 1 |
 | FR-EE-07 | Token budget enforcement (max tokens per session) | P0 | 1 |
 | FR-EE-08 | Time budget enforcement (max duration per session) | P0 | 1 |
@@ -56,7 +56,7 @@
 | FR-EE-11 | Multi-agent: Sequential pipeline | P1 | 2 |
 | FR-EE-12 | Multi-agent: Router pattern | P1 | 2 |
 | FR-EE-13 | Tree of Thought execution | P2 | 3 |
-| FR-EE-14 | Reflexion pattern (evaluate → reflect → retry) | P2 | 3 |
+| FR-EE-14 | Reflexion pattern (evaluate → reflect → retry) | P2 | 2 |
 | FR-EE-15 | Context window management (summarize, truncate) | P0 | 1 |
 
 ### 2.3 Tool System (FR-TS)
@@ -96,8 +96,8 @@
 |----|-------------|----------|-------|
 | FR-MS-01 | Short-term: conversation history management | P0 | 1 |
 | FR-MS-02 | Short-term: automatic summarization khi gần limit | P0 | 1 |
-| FR-MS-03 | Long-term: vector store cho per-agent knowledge | P1 | 1-2 |
-| FR-MS-04 | Long-term: store/retrieve memories as agent actions | P1 | 1-2 |
+| FR-MS-03 | Long-term: vector store cho per-agent knowledge | P1 | 2 |
+| FR-MS-04 | Long-term: store/retrieve memories as agent actions | P1 | 2 |
 | FR-MS-05 | Memory namespace isolation per tenant | P0 | 1 |
 | FR-MS-06 | Episodic memory (cross-session learning) | P2 | 3 |
 | FR-MS-07 | Knowledge graph integration | P2 | 3 |
@@ -109,10 +109,10 @@
 |----|-------------|----------|-------|
 | FR-LLM-01 | LLM Provider abstraction interface (model-agnostic contract) | P0 | 1 |
 | FR-LLM-02 | Anthropic Claude API integration (first provider) | P0 | 1 |
-| FR-LLM-03 | OpenAI API integration (second provider) | P1 | 1 |
+| FR-LLM-03 | OpenAI API integration (second provider) | P1 | 2 |
 | FR-LLM-03b | Google Gemini API integration | P1 | 2 |
 | FR-LLM-04 | OpenAI-compatible API support (cho local models) | P1 | 2 |
-| FR-LLM-05 | Model fallback (primary → secondary khi fail) | P1 | 1-2 |
+| FR-LLM-05 | Model fallback (primary → secondary khi fail) | P1 | 2 |
 | FR-LLM-06 | Model routing (task complexity → appropriate model) | P2 | 2 |
 | FR-LLM-07 | Response caching (same prompt → cached result, temp=0) | P2 | 2 |
 | FR-LLM-08 | Token usage tracking per call | P0 | 1 |
@@ -140,7 +140,7 @@
 | NFR-R-02 | Checkpoint success rate | > 99.9% |
 | NFR-R-03 | Zero data loss on executor crash | Via checkpoint |
 | NFR-R-04 | Recovery time (RTO) | < 5 minutes |
-| NFR-R-05 | Graceful degradation khi LLM provider down | Fallback to secondary |
+| NFR-R-05 | Graceful degradation khi LLM provider down | Retry same provider (Phase 1), fallback Phase 2 |
 
 ### 3.3 Security (NFR-S)
 
@@ -187,12 +187,12 @@
 
 | Provider | Priority | Protocol | Phase |
 |----------|----------|----------|-------|
-| Anthropic (Claude) | P0 | Anthropic API | 1 (first) |
-| OpenAI (GPT-4o, o3) | P1 | OpenAI API | 1 (second, sprint 2-3) |
+| Anthropic (Claude) | P0 | Anthropic API | 1 |
+| OpenAI (GPT-4o, o3) | P1 | OpenAI API | 2 |
 | Google (Gemini) | P1 | Gemini API | 2 |
 | OpenAI-compatible (Ollama, vLLM) | P1 | OpenAI-compatible API | 2 |
 
-> **Strategy note (post-review):** Claude-first approach. Thiết kế LLM abstraction interface từ đầu (model-agnostic contract), nhưng implement Claude adapter trước. OpenAI adapter thêm sau khi core runtime ổn định. Điều này giảm surface area Phase 1 mà vẫn đảm bảo extensibility.
+Phase 1: Claude only. LLM abstraction interface từ đầu, OpenAI adapter Phase 2.
 
 ### 4.2 MCP Tool Servers (Phase 1 test targets)
 
