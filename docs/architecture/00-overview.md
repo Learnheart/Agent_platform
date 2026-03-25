@@ -1,14 +1,14 @@
-# Kien Truc Tong Quan: Agent Serving Platform
+# Kiến Trúc Tổng Quan: Agent Serving Platform
 
-> **Phien ban:** 3.0
-> **Ngay cap nhat:** 2026-03-25
+> **Phiên bản:** 3.0
+> **Ngày cập nhật:** 2026-03-25
 
 ---
 
-## 1. Pham Vi He Thong
+## 1. Phạm Vi Hệ Thống
 
-**Platform chiu trach nhiem:** runtime execution, state management, security, observability, cost control, data governance.
-**Developer chiu trach nhiem:** agent logic (system prompt, tool selection, model config).
+**Platform chịu trách nhiệm:** runtime execution, state management, security, observability, cost control, data governance.
+**Developer chịu trách nhiệm:** agent logic (system prompt, tool selection, model config).
 
 ```
                     +---------------------------------------------------------+
@@ -39,7 +39,7 @@
 
 ### Phase Scope
 
-| Khu vuc | Phase 1 | Phase 2 |
+| Khu vực | Phase 1 | Phase 2 |
 |---------|---------|---------|
 | Execution Engine | ReAct | Plan-then-Execute, Reflexion |
 | LLM Provider | Claude (Anthropic) | OpenAI adapter, Gemini |
@@ -106,15 +106,15 @@
 
 ## 3. Design Principles
 
-| # | Nguyen tac | Y nghia |
+| # | Nguyên tắc | Ý nghĩa |
 |---|-----------|---------|
-| 1 | **Platform, not Framework** | Cung cap ha tang serving. Platform lo cross-cutting concerns, developer lo agent logic |
-| 2 | **API-First** | Moi tinh nang accessible qua API truoc |
+| 1 | **Platform, not Framework** | Cung cấp hạ tầng serving. Platform lo cross-cutting concerns, developer lo agent logic |
+| 2 | **API-First** | Mọi tính năng accessible qua API trước |
 | 3 | **Model-Agnostic** | Abstraction layer cho LLM providers |
-| 4 | **MCP-Native** | MCP lam chuan tich hop tool chinh |
-| 5 | **Secure by Default** | Permission, isolation, audit o tang platform |
+| 4 | **MCP-Native** | MCP làm chuẩn tích hợp tool chính |
+| 5 | **Secure by Default** | Permission, isolation, audit ở tầng platform |
 | 6 | **Observable from Day 1** | Tracing, metrics, cost tracking built-in |
-| 7 | **Progressive Complexity** | Don gian cho use case co ban, manh me cho use case phuc tap |
+| 7 | **Progressive Complexity** | Đơn giản cho use case cơ bản, mạnh mẽ cho use case phức tạp |
 
 ---
 
@@ -159,7 +159,7 @@
 
 ### 4.2 Component Summary
 
-| Component | Trach nhiem | Technology |
+| Component | Trách nhiệm | Technology |
 |-----------|-------------|------------|
 | **API Gateway** | Auth, rate limit, routing, TLS | FastAPI + middleware |
 | **Agent Manager** | CRUD agent definitions, versioning, config | FastAPI + PostgreSQL |
@@ -192,9 +192,9 @@
 
 ---
 
-## 5. Luong Xu Ly He Thong (End-to-End Flows)
+## 5. Luồng Xử Lý Hệ Thống (End-to-End Flows)
 
-### 5.1 Luong Tong Quan: Tu API Request den Response
+### 5.1 Luồng Tổng Quan: Từ API Request đến Response
 
 ```
 +------+     +---------+     +---------+     +----------+     +----------+
@@ -257,7 +257,7 @@
    |<-------------+-------- SSE Stream (events) ----------------+
    |              |
    |              |    +-------------------------------------------+
-   |              |    |        CROSS-CUTTING (moi step)            |
+   |              |    |        CROSS-CUTTING (mỗi step)            |
    |              |    |                                            |
    |              |    |  Event Bus --> OTel Trace Store            |
    |              |    |           --> Governance (audit sink)      |
@@ -268,7 +268,7 @@
    |              |    +-------------------------------------------+
 ```
 
-### 5.2 Luong Chi Tiet: Mot Step Thuc Thi (Sequence Diagram)
+### 5.2 Luồng Chi Tiết: Một Step Thực Thi (Sequence Diagram)
 
 ```
 Client     API GW    Session   Queue    Executor   Memory    Guardrails  LLM GW    Tool RT   Checkpoint  Event Bus  Governance
@@ -331,7 +331,7 @@ Client     API GW    Session   Queue    Executor   Memory    Guardrails  LLM GW 
  |<== final_answer (SSE) =====|         |          |          |          |          |          |           |          |
 ```
 
-### 5.3 Luong Multi-Step Execution (Macro View)
+### 5.3 Luồng Multi-Step Execution (Macro View)
 
 ```
 Client sends message
@@ -407,7 +407,7 @@ Cost: tracked per step, aggregated to session/agent/tenant
                          RUNNING --wait_input()--> WAITING_INPUT
 ```
 
-### 5.5 Luong Agent Creation & Configuration
+### 5.5 Luồng Agent Creation & Configuration
 
 ```
 Developer        SDK/API         Agent Manager      Tool Manager      PostgreSQL
@@ -435,7 +435,7 @@ Developer        SDK/API         Agent Manager      Tool Manager      PostgreSQL
  |<--agent created--|                 |                   |                |
 ```
 
-### 5.6 Luong Cross-Cutting: Events Flow Through System
+### 5.6 Luồng Cross-Cutting: Events Flow Through System
 
 ```
     Executor / Services
@@ -463,12 +463,12 @@ Developer        SDK/API         Agent Manager      Tool Manager      PostgreSQL
  +---------+ +----------+ +-----------+ +------------+
 ```
 
-### 5.7 Luong Error & Recovery
+### 5.7 Luồng Error & Recovery
 
 | Failure Scenario | Recovery |
 |-----------------|----------|
 | Executor crash (mid-step) | Task not ACKed -> re-delivered from queue. New executor restores from checkpoint. Resumes from last saved step |
-| Task timeout in queue | Re-deliver hoac move to dead-letter queue |
+| Task timeout in queue | Re-deliver hoặc move to dead-letter queue |
 | LLM API error | Retry with exponential backoff (3x). If persistent -> session FAILED |
 | LLM rate limit | Queue + delay + retry |
 | LLM content refusal | No retry, return refusal message to client |
@@ -653,9 +653,9 @@ Layer 6: Governance ---- Immutable audit logs + Data classification + Retention 
 |---------|---------------|-------|
 | **Authentication & Authorization** | API Gateway middleware (OAuth2/API Key), tenant routing | 1 |
 | **Input/Output Safety** | Guardrails Engine (inbound + outbound pipeline) | 1 |
-| **Observability** | OpenTelemetry SDK — spans cho moi LLM call, tool call, step | 1 |
+| **Observability** | OpenTelemetry SDK — spans cho mọi LLM call, tool call, step | 1 |
 | **Cost Tracking** | Budget Controller + Event Bus -> Cost Calculator -> PG aggregates | 1 |
-| **Audit Trail** | Governance Module — moi action logged immutable | 1 |
+| **Audit Trail** | Governance Module — mọi action logged immutable | 1 |
 | **Data Retention** | Governance Module — policy-based cleanup (session data, logs, memories) | 1 |
 | **Data Classification** | Governance Module — sensitivity tagging cho data in transit | 1 |
 | **Tenant Isolation** | Row-Level Security (PostgreSQL) + Redis key namespacing | 1 |
@@ -666,27 +666,27 @@ Layer 6: Governance ---- Immutable audit logs + Data classification + Retention 
 
 ## 12. Architecture Decision Records (ADR)
 
-| # | Quyet dinh | Trade-off |
+| # | Quyết định | Trade-off |
 |---|-----------|-----------|
-| ADR-001 | Python lam ngon ngu chinh | Khong toi uu perf nhu Go/Rust |
-| ADR-002 | Stateless executor + externalized state | Them latency state load/save |
-| ADR-003 | Redis Streams cho task queue. Dead-letter queue logic Phase 1 | Co the can Kafka o scale lon |
-| ADR-004 | PostgreSQL + pgvector all-in-one | Can specialized stores sau |
-| ADR-005 | MCP lam chuan tool integration | Providers phai implement MCP |
+| ADR-001 | Python làm ngôn ngữ chính | Không tối ưu perf như Go/Rust |
+| ADR-002 | Stateless executor + externalized state | Thêm latency state load/save |
+| ADR-003 | Redis Streams cho task queue. Dead-letter queue logic Phase 1 | Có thể cần Kafka ở scale lớn |
+| ADR-004 | PostgreSQL + pgvector all-in-one | Cần specialized stores sau |
+| ADR-005 | MCP làm chuẩn tool integration | Providers phải implement MCP |
 | ADR-006 | FastAPI | N/A |
 | ADR-007 | OpenTelemetry tracing | Setup complexity |
 | ADR-008 | Row-level security cho tenant isolation | Dedicated DB cho high-sec |
-| ADR-009 | Event-driven execution (moi step emit events) | Event ordering complexity, eventual consistency |
-| ADR-010 | Governance as module (Phase 1), service-ready interface | Cross-cutting logic nam trong cung process |
+| ADR-009 | Event-driven execution (mỗi step emit events) | Event ordering complexity, eventual consistency |
+| ADR-010 | Governance as module (Phase 1), service-ready interface | Cross-cutting logic nằm trong cùng process |
 | ADR-011 | SSE cho real-time streaming Phase 1 (unidirectional) | WebSocket Phase 2 cho bidirectional |
-| ADR-012 | TaskQueue abstraction interface — decouple queue implementation tu consumer logic. Cho phep swap Redis Streams -> Kafka khong can rewrite consumers | Interface overhead |
-| ADR-013 | Delta-based checkpoint — luu incremental changes (messages moi, tool results) thay vi full session state moi step. Full snapshot dinh ky hoac cuoi session | Replay complexity khi restore |
+| ADR-012 | TaskQueue abstraction interface — decouple queue implementation từ consumer logic. Cho phép swap Redis Streams -> Kafka không cần rewrite consumers | Interface overhead |
+| ADR-013 | Delta-based checkpoint — lưu incremental changes (messages mới, tool results) thay vì full session state mỗi step. Full snapshot định kỳ hoặc cuối session | Replay complexity khi restore |
 
 ---
 
 ## 13. Detailed Design Documents
 
-| Component | Tai lieu | Mo ta |
+| Component | Tài liệu | Mô tả |
 |-----------|----------|-------|
 | **Guardrails** | [`guardrails.md`](guardrails.md) | Input/output validation, prompt injection, policy engine |
 | **Memory** | [`memory.md`](memory.md) | Memory stack, vector store, context management, shared memory |

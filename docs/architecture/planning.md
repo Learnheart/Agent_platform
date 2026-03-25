@@ -1,7 +1,7 @@
-# Thiet Ke Chi Tiet: Planning & Execution Engine
+# Thiết Kế Chi Tiết: Planning & Execution Engine
 
-> **Phien ban:** 2.0
-> **Ngay tao:** 2026-03-25
+> **Phiên bản:** 2.0
+> **Ngày tạo:** 2026-03-25
 > **Parent:** [Architecture Overview](00-overview.md)
 
 ---
@@ -425,7 +425,7 @@ class ReflexionEngine:
                                  │
                ┌─────────────────▼─────────────────┐
                │  save_snapshot(): full state       │ ← Every N steps (default 10)
-               │  OR at session end                 │   hoac khi session ket thuc
+               │  OR at session end                 │   hoặc khi session kết thúc
                └─────────────────┬─────────────────┘
                                  │
                           Next step or done
@@ -453,8 +453,8 @@ class CheckpointSnapshot:
 
 class CheckpointManager:
     """
-    Delta-based checkpoint. Luu delta sau moi step,
-    full snapshot moi N steps hoac khi session ket thuc.
+    Delta-based checkpoint. Lưu delta sau mỗi step,
+    full snapshot mỗi N steps hoặc khi session kết thúc.
     """
 
     def __init__(self, redis, pg, snapshot_interval: int = 10):
@@ -462,10 +462,10 @@ class CheckpointManager:
 
     async def save_delta(self, session: Session, step_result: StepResult) -> None:
         """
-        1. Serialize chi new messages + tool results tu step vua xong
-        2. Append delta vao Redis list
-        3. Async append vao PostgreSQL
-        4. Neu step_index % snapshot_interval == 0 -> save_snapshot()
+        1. Serialize chỉ new messages + tool results từ step vừa xong
+        2. Append delta vào Redis list
+        3. Async append vào PostgreSQL
+        4. Nếu step_index % snapshot_interval == 0 -> save_snapshot()
         """
         delta = CheckpointDelta(
             session_id=session.id,
@@ -513,7 +513,7 @@ class CheckpointManager:
         """
         1. Load last snapshot (Redis -> fallback PG)
         2. Load deltas sau snapshot
-        3. Replay deltas len snapshot -> session hien tai
+        3. Replay deltas lên snapshot -> session hiện tại
         """
         # Load snapshot
         snapshot_data = await self.redis.get(f"checkpoint:snapshot:{session_id}")
@@ -791,7 +791,7 @@ class RetryPolicy:
 | `BUDGET_EXCEEDED` | 0 | — | — | — |
 | `EXECUTOR_CRASH` | — | — | — | — |
 
-`EXECUTOR_CRASH`: auto-recovery via queue re-delivery, khong dung RetryPolicy.
+`EXECUTOR_CRASH`: auto-recovery via queue re-delivery, không dùng RetryPolicy.
 
 ---
 
