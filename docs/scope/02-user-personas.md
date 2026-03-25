@@ -15,8 +15,8 @@ Nền tảng Agent Platform phục vụ 6 persona chính, chia thành 2 nhóm:
 │                    PRIMARY USERS                        │
 │  (Trực tiếp sử dụng platform)                         │
 │                                                        │
-│  👤 AI/ML Engineer    👤 Startup CTO    👤 Citizen Dev  │
-│     (Marcus)             (Elena)            (Priya)     │
+│  👤 Agent Builder     👤 AI/ML Engineer  👤 Startup CTO  │
+│     (Priya)              (Marcus)            (Elena)     │
 ├────────────────────────────────────────────────────────┤
 │                   STAKEHOLDER USERS                     │
 │  (Ảnh hưởng quyết định adoption)                       │
@@ -113,20 +113,21 @@ Nền tảng Agent Platform phục vụ 6 persona chính, chia thành 2 nhóm:
 
 ---
 
-## Persona 3: Business Analyst / Citizen Developer — "Priya"
+## Persona 3: Agent Builder — "Priya"
 
 ### Profile
 
 | Thuộc tính | Chi tiết |
 |------------|----------|
-| **Vai trò** | Senior Business Analyst tại tổ chức healthcare |
-| **Technical level** | Moderate. Excel, SQL, low-code tools. Không biết lập trình |
-| **Kinh nghiệm** | 8 năm business analysis, 1 năm dùng AI tools |
+| **Vai trò** | Agent Builder — người tạo và quản lý AI agent trên platform |
+| **Technical level** | Moderate. Có kiến thức về xây dựng agent nhưng không code. Cần môi trường low/no-code để tạo, cấu hình, và quản lý agent. |
+| **Kinh nghiệm** | 8 năm business analysis, 2 năm dùng AI tools và low-code platforms |
 
 ### Bài toán cần giải quyết
 - Automate document review và data extraction tốn 60% thời gian team
 - Đang đợi 3-6 tháng trong IT backlog cho automation requests
-- Muốn tự build mà không cần developer
+- Muốn tự build agent mà không cần developer
+- Cần tạo, cấu hình, và quản lý agent thông qua giao diện trực quan
 
 ### Pain Points hiện tại
 - Hoàn toàn phụ thuộc engineering team cho AI automation
@@ -135,7 +136,8 @@ Nền tảng Agent Platform phục vụ 6 persona chính, chia thành 2 nhóm:
 - Frustrated bởi delivery chậm
 
 ### Nhu cầu từ Platform
-- **Visual drag-and-drop** agent builder
+- **Web UI config-based** (Phase 1) để tạo và quản lý agent qua form
+- **Visual drag-and-drop workflow builder** (Phase 2)
 - **Pre-built templates** cho common use cases
 - **Natural language configuration** ("khi invoice đến, extract total và vendor, update spreadsheet")
 - **Guardrails** prevent misconfiguration
@@ -144,6 +146,7 @@ Nền tảng Agent Platform phục vụ 6 persona chính, chia thành 2 nhóm:
 ### Thước đo thành công
 | Metric | Target |
 |--------|--------|
+| Tạo agent đầu tiên qua Web UI | < 15 phút |
 | Build & deploy working agent | < 1 ngày, không cần dev help |
 | Document extraction accuracy | > 80% |
 | Thời gian tiết kiệm mỗi tuần | Measurable |
@@ -151,7 +154,7 @@ Nền tảng Agent Platform phục vụ 6 persona chính, chia thành 2 nhóm:
 ### Quote
 > _"Tôi biết rõ quy trình nghiệp vụ hơn bất kỳ developer nào. Nếu tool đủ đơn giản, tôi có thể tự build agent tốt hơn và nhanh hơn."_
 
-**Note:** Persona này là target cho Phase 2+ (Visual Agent Builder). Phase 1 focus vào Marcus và Elena.
+**Note:** Priya là PRIMARY persona từ Phase 1 với Web UI config-based. Phase 2 nâng cấp trải nghiệm với visual workflow builder.
 
 ---
 
@@ -285,11 +288,12 @@ Nền tảng Agent Platform phục vụ 6 persona chính, chia thành 2 nhóm:
 
 | Persona | Phase 1 (MVP) | Phase 2 (Scale) | Phase 3 (Ecosystem) |
 |---------|---------------|------------------|---------------------|
-| **Marcus** (AI/ML Engineer) | **PRIMARY** | Primary | Primary |
-| **Elena** (Startup CTO) | **PRIMARY** | Primary | Secondary |
-| **Priya** (Citizen Developer) | Out of scope | **PRIMARY** | Primary |
+| **Priya** (Agent Builder) | **PRIMARY** | Primary | Primary |
 | **Sarah** (Enterprise Architect) | Secondary | **PRIMARY** | Primary |
 | **James** (IT Ops Lead) | Secondary | **PRIMARY** | Primary |
-| **David** (Compliance Officer) | Awareness | Secondary | **PRIMARY** |
+| **David** (Compliance Officer) | Secondary | Secondary | **PRIMARY** |
+| **Marcus** (AI/ML Engineer) | Secondary | **PRIMARY** | Primary |
+| **Elena** (Startup CTO) | Secondary | **PRIMARY** | Secondary |
 
-**Phase 1 focus:** Marcus và Elena — developer-centric, code-first experience.
+**Phase 1 focus:** Priya (Agent Builder) — Web UI config-based, tạo và quản lý agent không cần code.
+**Phase 2 focus:** Marcus và Elena (SDK users), Sarah — developer-centric SDK integration và enterprise features.

@@ -117,6 +117,23 @@
 | FR-LLM-07 | Response caching (same prompt → cached result, temp=0) | P2 | 2 |
 | FR-LLM-08 | Token usage tracking per call | P0 | 1 |
 
+### 2.8 Web UI (FR-UI)
+
+| ID | Requirement | Priority | Phase |
+|----|-------------|----------|-------|
+| FR-UI-01 | Dashboard tổng quan (số agent, sessions, chi phí) | P0 | 1 |
+| FR-UI-02 | Tạo agent bằng form cấu hình (system prompt, model, tools, guardrails) | P0 | 1 |
+| FR-UI-03 | Chỉnh sửa agent config | P0 | 1 |
+| FR-UI-04 | Danh sách và quản lý agent (list, search, delete) | P0 | 1 |
+| FR-UI-05 | Chat interface với agent (gửi message, xem streaming response) | P0 | 1 |
+| FR-UI-06 | Xem session list với filter (agent, trạng thái, thời gian) | P0 | 1 |
+| FR-UI-07 | Execution trace view (timeline các steps, tool calls, chi phí) | P0 | 1 |
+| FR-UI-08 | Tool registry view (danh sách MCP servers và tools) | P1 | 1 |
+| FR-UI-09 | Settings page (API keys, LLM provider config) | P1 | 1 |
+| FR-UI-10 | Visual workflow builder (kéo thả) | P1 | 2 |
+| FR-UI-11 | Agent template library trên UI | P2 | 2 |
+| FR-UI-12 | Real-time notification (session complete, error, HITL request) | P1 | 2 |
+
 ---
 
 ## 3. Non-Functional Requirements

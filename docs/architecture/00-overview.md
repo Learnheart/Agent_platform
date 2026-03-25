@@ -8,13 +8,13 @@
 ## 1. Phạm Vi Hệ Thống
 
 **Platform chịu trách nhiệm:** runtime execution, state management, security, observability, cost control, data governance.
-**Developer chịu trách nhiệm:** agent logic (system prompt, tool selection, model config).
+**User chịu trách nhiệm:** agent logic (system prompt, tool selection, model config).
 
 ```
                     +---------------------------------------------------------+
                     |               AGENT PLATFORM (our system)               |
                     |                                                         |
-  Developers ------>|  SDK / API / CLI                                        |
+  Users ----------->|  Web UI / API                                           |
                     |       |                                                 |
                     |       v                                                 |
                     |  Agent Management --- Session --- Execution Engine      |
@@ -46,7 +46,7 @@
 | Real-time Streaming | SSE (Server-Sent Events) | WebSocket |
 | Memory | Short-term + Working | Long-term (vector store, RAG) |
 | Multi-tenant | Single-tenant | Multi-tenant, RBAC |
-| SDK | Python | TypeScript |
+| SDK | Web UI (config-based) | Visual builder kéo thả, SDK (optional) |
 
 ---
 
@@ -55,7 +55,7 @@
 ```
 +----------------------------------------------------------------------+
 |                            CLIENT LAYER                                |
-|  SDK (Python) | REST API | SSE | Webhook Consumer                     |
+|  Web UI (Phase 1) | REST API | SSE | Webhook Consumer                  |
 |  [WebSocket -> Phase 2]                                                |
 +-------------------------------+--------------------------------------+
                                 |
@@ -125,6 +125,7 @@
 ```
 +---- API Layer --------------------------------------------------------+
 |  REST Controller | SSE Handler | Auth Middleware                       |
+|  Web UI (React/Next.js)                                                |
 |  [WebSocket Handler -> Phase 2]                                        |
 +-----------------------------+------------------------------------------+
                               |
@@ -571,6 +572,8 @@ Developer        SDK/API         Agent Manager      Tool Manager      PostgreSQL
 
 ## 8. API Surface (Phase 1)
 
+> **API được sử dụng bởi Web UI (Phase 1). SDK optional Phase 2+.**
+
 ```
 # Agent Management
 POST   /api/v1/agents                    Create agent
@@ -612,14 +615,16 @@ GET    /api/v1/audit/agents/{id}         Audit trail for agent
 +------------------- Kubernetes Cluster --------------------+
 |                                                             |
 |  +------------+  +------------+  +----------------------+  |
-|  | API Gateway |  | Agent Mgmt |  | Session Service      |  |
-|  | (2+ pods)   |  | (2+ pods)   |  | (2+ pods)            |  |
-|  +------+------+  +------+-----+  +------+---------------+  |
-|         +----------------+---------------+                   |
-|                          v                                    |
-|  +------------------------------------------------------+   |
-|  | Executor Pool (3-N pods, HPA on queue depth)          |   |
-|  +------------------------------------------------------+   |
+|  | Web UI     |  | API Gateway |  | Agent Mgmt           |  |
+|  | (2+ pods)  |  | (2+ pods)   |  | (2+ pods)            |  |
+|  +------+-----+  +------+-----+  +------+---------------+  |
+|         |               |               |                   |
+|  +------+-----+  +------+---------------+                   |
+|  | Session    |         v                                    |
+|  | Service    |  +------------------------------------------------------+   |
+|  | (2+ pods)  |  | Executor Pool (3-N pods, HPA on queue depth)          |   |
+|  +------+-----+  +------------------------------------------------------+   |
+|         +----------------+                                    |
 |                          |                                    |
 |  +------------+  +------v-----+  +----------------------+  |
 |  | Redis (HA) |  | PostgreSQL |  | S3 / GCS             |  |
@@ -701,17 +706,17 @@ Layer 6: Governance ---- Immutable audit logs + Data classification + Retention 
 
 ```
 agent-platform/
-├── src/
-│   ├── api/                    # API layer (routes, middleware, SSE)
-│   ├── services/               # Business logic (agent, session, tool, memory)
-│   ├── engine/                 # Execution engine (executor, react, planner, checkpoint)
-│   ├── providers/              # External (llm/, mcp/)
-│   ├── governance/             # Data governance (audit, retention, classification)
-│   ├── store/                  # Data access (postgres/, redis/, memory/)
-│   ├── core/                   # Shared (models, config, events, errors, security, tracing)
+├── src/                          # Backend (Python)
+│   ├── api/                      # API layer (routes, middleware, SSE)
+│   ├── services/                 # Business logic (agent, session, tool, memory)
+│   ├── engine/                   # Execution engine (executor, react, planner, checkpoint)
+│   ├── providers/                # External (llm/, mcp/)
+│   ├── governance/               # Data governance (audit, retention, classification)
+│   ├── store/                    # Data access (postgres/, redis/, memory/)
+│   ├── core/                     # Shared (models, config, events, errors, security, tracing)
 │   └── main.py
-├── sdk/python/                 # Python SDK
-├── tests/                      # unit/ integration/ e2e/
-├── deploy/                     # docker/ k8s/
-└── docs/                       # Documentation
+├── web/                          # Frontend (React/Next.js)
+├── tests/                        # unit/ integration/ e2e/
+├── deploy/                       # docker/ k8s/
+└── docs/                         # Documentation
 ```

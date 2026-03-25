@@ -38,8 +38,8 @@ Xây dựng một nền tảng toàn diện để tạo, triển khai, và vận
 │  └─────────────┘  └──────────────┘  └────────────────────┘  │
 │                                                               │
 │  ┌─────────────┐  ┌──────────────┐  ┌────────────────────┐  │
-│  │ Security &  │  │ API Gateway  │  │ SDK                │  │
-│  │ Governance  │  │ & Auth       │  │ (Python P1, TS P2) │  │
+│  │ Security &  │  │ API Gateway  │  │ Web UI             │  │
+│  │ Governance  │  │ & Auth       │  │ (P1 config, P2 vis)│  │
 │  └─────────────┘  └──────────────┘  └────────────────────┘  │
 │                                                               │
 └───────────────────────────────────────────────────────────────┘
@@ -62,20 +62,21 @@ Xây dựng một nền tảng toàn diện để tạo, triển khai, và vận
 | **Observability** | Tracing (OTel), metrics, cost tracking, log aggregation |
 | **Security** | Auth (OAuth/OIDC), RBAC, tenant isolation, audit trail |
 | **API Gateway** | REST API, WebSocket streaming, rate limiting |
-| **SDK** | Python SDK (primary), TypeScript SDK (secondary) |
+| **Web UI** | Phase 1: config-based (form tạo agent, quản lý session, xem kết quả). Phase 2: visual builder |
+| **SDK** | Optional Phase 2+ (Python, TypeScript) |
 | **Guardrails** | Schema validation, budget enforcement, tool permissions (slim Phase 1; advanced features Phase 2) |
 
 ### 2.3 Ngoài phạm vi (Out of Scope)
 
 | Item | Lý do | Phase dự kiến |
 |------|-------|---------------|
-| Visual Agent Builder (low-code UI) | Cần core platform ổn định trước | Phase 2 |
+| Visual Workflow Builder (kéo thả) | Nằm trong Phase 2, không phải Phase 1 | Phase 2 |
 | Agent Marketplace | Cần ecosystem trước | Phase 3 |
 | Multi-agent orchestration nâng cao | Phức tạp, cần validate single-agent trước | Phase 2 |
 | Edge deployment | Cần runtime riêng, market niche | Phase 3 |
 | A2A protocol support | Protocol còn sớm | Phase 2-3 |
 | Self-hosted LLM hosting | Khác bài toán, dùng provider có sẵn | Không |
-| End-user facing UI/chatbot widget | Platform là backend, UI là responsibility của consumer | Không |
+| End-user chatbot widget | UI cho agent builder, không phải end-user chatbot | Không |
 | Billing & subscription management | Dùng third-party (Stripe) | Phase 2 |
 
 ---
@@ -97,7 +98,7 @@ Xây dựng một nền tảng toàn diện để tạo, triển khai, và vận
 | WebSocket Streaming | Real-time event stream cho interactive sessions |
 | Tracing | OpenTelemetry instrumentation, basic trace viewer |
 | Auth | API key + OAuth 2.0 |
-| Python SDK | Opinionated thin client — auth, session, streaming, tools (xem [DX spec](04-developer-experience.md)) |
+| Web UI | Form tạo agent, quản lý session, xem kết quả (config-based) |
 | Cost Tracking | Per-session token usage và cost estimation |
 | Documentation | API docs, getting started guide, architecture guide |
 
@@ -110,7 +111,8 @@ Xây dựng một nền tảng toàn diện để tạo, triển khai, và vận
 | Multi-agent Orchestration | Supervisor, pipeline, router patterns |
 | RBAC | Fine-grained role-based access control |
 | Visual Trace Explorer | Full trace viewer UI |
-| TypeScript SDK | Parity với Python SDK |
+| Visual Workflow Builder | Kéo thả (drag-and-drop) agent construction |
+| SDK (Python, TypeScript) | Optional — cho developer muốn code-first integration |
 | Agent Versioning | Version management, rollback, A/B deploy |
 | Evaluation Framework | Test suites, LLM-as-judge, regression testing |
 | Budget Enforcement | Per-session, per-agent, per-tenant budgets |
@@ -126,7 +128,6 @@ Xây dựng một nền tảng toàn diện để tạo, triển khai, và vận
 | Deliverable | Mô tả |
 |-------------|--------|
 | Agent Marketplace | Publish, discover, share agent templates |
-| Visual Agent Builder | Low-code drag-and-drop agent construction |
 | A2A Protocol | Agent-to-agent interoperability |
 | Advanced Memory | Episodic memory, knowledge graphs |
 | Edge Runtime | Lightweight agent runtime cho edge devices |
@@ -221,9 +222,9 @@ Xây dựng một nền tảng toàn diện để tạo, triển khai, và vận
 - [ ] MCP tool integration hoạt động với ≥ 5 MCP servers phổ biến
 - [ ] Checkpoint/resume success rate > 99%
 - [ ] REST API + WebSocket streaming đầy đủ
-- [ ] Python SDK published
+- [ ] Web UI cho phép tạo agent trong <5 phút
 - [ ] Tracing hiển thị được full execution trace
 - [ ] Auth + tenant isolation hoạt động
-- [ ] Documentation đủ để developer onboard trong < 1 ngày
+- [ ] User tạo agent đầu tiên < 15 phút
 - [ ] Load test: 1,000 concurrent sessions stable
 - [ ] Security audit passed (basic level)
