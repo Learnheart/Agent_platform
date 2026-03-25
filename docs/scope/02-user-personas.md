@@ -1,30 +1,61 @@
 # Đối Tượng Sử Dụng: User Personas
 
-> **Phiên bản:** 1.0
-> **Ngày tạo:** 2026-03-25
+> **Phiên bản:** 2.0
+> **Ngày cập nhật:** 2026-03-25
 > **Tác giả:** AI Project Manager & Lead Architect
 
 ---
 
 ## Tổng Quan
 
-Nền tảng Agent Platform phục vụ 6 persona chính, chia thành 2 nhóm:
+Agent Platform phục vụ **hai đối tượng sử dụng chính** với vai trò khác nhau:
 
 ```
-┌────────────────────────────────────────────────────────┐
-│                    PRIMARY USERS                        │
-│  (Trực tiếp sử dụng platform)                         │
-│                                                        │
-│  👤 Agent Builder     👤 AI/ML Engineer  👤 Startup CTO  │
-│     (Priya)              (Marcus)            (Elena)     │
-├────────────────────────────────────────────────────────┤
-│                   STAKEHOLDER USERS                     │
-│  (Ảnh hưởng quyết định adoption)                       │
-│                                                        │
-│  👤 Enterprise Arch   👤 IT Ops Lead   👤 Compliance    │
-│     (Sarah)              (James)          (David)       │
-└────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│                        AGENT PLATFORM                                 │
+│                                                                       │
+│  ══════════════════════════════════════════════════════════════════   │
+│  BUILDER (đối tượng chính — dùng platform trực tiếp)                 │
+│  Tạo, cấu hình, quản lý, monitor agent qua Management UI + API      │
+│                                                                       │
+│    Priya (Agent Builder)    Marcus (AI/ML Eng)    Elena (Startup CTO) │
+│  ══════════════════════════════════════════════════════════════════   │
+│                                                                       │
+│  ──────────────────────────────────────────────────────────────────   │
+│  END USER (đối tượng phụ — dùng agent qua Session API)               │
+│  Tương tác với agent đã được builder tạo sẵn                         │
+│  Không truy cập Management UI, không biết platform bên dưới          │
+│                                                                       │
+│    Khách hàng    Nhân viên nội bộ    Người dùng ứng dụng             │
+│  ──────────────────────────────────────────────────────────────────   │
+│                                                                       │
+│  ......................................................................│
+│  STAKEHOLDER (ảnh hưởng quyết định adoption, không dùng hàng ngày)   │
+│                                                                       │
+│    Sarah (Enterprise Arch)    James (IT Ops)    David (Compliance)    │
+│  ......................................................................│
+└──────────────────────────────────────────────────────────────────────┘
 ```
+
+### Phân biệt Builder vs End User
+
+| | **Builder** | **End User** |
+|---|---|---|
+| **Là ai** | Người tạo và quản lý agent | Người được phục vụ bởi agent |
+| **Truy cập gì** | Management UI + toàn bộ API | Chỉ Session API (send message, nhận response) |
+| **Cần gì từ platform** | UX tạo agent nhanh, observability, cost control | Response nhanh, chính xác, đáng tin cậy |
+| **Platform phục vụ thế nào** | Cung cấp Management UI + API trực tiếp | Cung cấp runtime + Session API, builder tự xây UX |
+| **Phase 1 scope** | Full: tạo agent, manage session, monitor, debug | Session API: gửi message → nhận streaming response |
+
+> **Nguyên tắc:** Platform đầu tư UX cho Builder. Với End User, platform cung cấp Session API + SSE streaming chất lượng cao — builder chịu trách nhiệm xây dựng trải nghiệm end user phù hợp use case.
+
+---
+
+---
+
+# BUILDER PERSONAS (đối tượng chính)
+
+> Builder là người trực tiếp sử dụng platform để tạo, cấu hình, và quản lý agent. Đây là đối tượng chính mà platform phục vụ.
 
 ---
 
@@ -158,6 +189,74 @@ Nền tảng Agent Platform phục vụ 6 persona chính, chia thành 2 nhóm:
 
 ---
 
+---
+
+# END USER PERSONA (đối tượng phụ)
+
+> End User tương tác với agent đã được builder tạo sẵn. Họ KHÔNG truy cập Management UI của platform — chỉ dùng agent qua Session API (hoặc UI mà builder xây riêng).
+
+---
+
+## Persona 7: End User — "Minh"
+
+### Profile
+
+| Thuộc tính | Chi tiết |
+|------------|----------|
+| **Vai trò** | Nhân viên kinh doanh, khách hàng, hoặc người dùng ứng dụng |
+| **Technical level** | Thấp đến trung bình. Không biết/cần biết về AI hay platform |
+| **Kinh nghiệm** | Quen dùng chat apps (Zalo, Slack, web chat) |
+
+### Bài toán cần giải quyết
+- Cần hỗ trợ nhanh (tra cứu thông tin, xử lý yêu cầu, giải đáp thắc mắc)
+- Không muốn chờ đợi hoặc qua nhiều bước
+- Cần kết quả chính xác và đáng tin cậy
+
+### Pain Points hiện tại
+- Chatbot truyền thống trả lời máy móc, không hiểu context
+- Phải chờ nhân viên support trả lời thủ công
+- Không có kênh self-service cho các tác vụ phức tạp hơn FAQ
+
+### Nhu cầu từ Platform (gián tiếp — qua Session API)
+- **Response nhanh** — first token < 500ms, toàn bộ response < vài giây
+- **Streaming** — thấy response đang được tạo, không phải chờ hết mới hiện
+- **Multi-turn** — agent nhớ context trong cuộc hội thoại
+- **Reliability** — không bị lỗi giữa chừng, có khả năng resume
+- **Chất lượng** — câu trả lời chính xác, có thể thực hiện action (không chỉ trả lời)
+
+### Thước đo thành công
+| Metric | Target |
+|--------|--------|
+| First token latency | < 500ms (excl. LLM) |
+| Session reliability | > 99.9% |
+| Task completion rate | Phụ thuộc agent quality (builder's responsibility) |
+
+### Quote
+> _"Tôi không quan tâm có AI hay không. Tôi chỉ cần nó trả lời đúng và nhanh."_
+
+**Note:** Platform không xây UI cho Minh. Platform cung cấp Session API + SSE streaming chất lượng cao. Builder (Priya/Marcus/Elena) chịu trách nhiệm xây UI phù hợp cho end user của họ.
+
+### Quan hệ Builder → End User
+
+```
+Builder (Priya) tạo agent "Customer Support Bot"
+    ↓ config trên Management UI
+    ↓ agent stored trong platform
+    ↓
+End User (Minh) chat với agent
+    ↓ qua Session API (POST /sessions/{id}/messages)
+    ↓ nhận streaming response (GET /sessions/{id}/stream SSE)
+    ↓ UI do builder xây (web app, mobile app, embed widget...)
+```
+
+---
+
+# STAKEHOLDER PERSONAS
+
+> Stakeholder ảnh hưởng quyết định adoption nhưng không sử dụng platform hàng ngày.
+
+---
+
 ## Persona 4: Enterprise Architect — "Sarah"
 
 ### Profile
@@ -286,14 +385,32 @@ Nền tảng Agent Platform phục vụ 6 persona chính, chia thành 2 nhóm:
 
 ## Priority Matrix: Persona × Phase
 
+### Builder Personas
+
 | Persona | Phase 1 (MVP) | Phase 2 (Scale) | Phase 3 (Ecosystem) |
 |---------|---------------|------------------|---------------------|
 | **Priya** (Agent Builder) | **PRIMARY** | Primary | Primary |
-| **Sarah** (Enterprise Architect) | Secondary | **PRIMARY** | Primary |
-| **James** (IT Ops Lead) | Secondary | **PRIMARY** | Primary |
-| **David** (Compliance Officer) | Secondary | Secondary | **PRIMARY** |
 | **Marcus** (AI/ML Engineer) | Secondary | **PRIMARY** | Primary |
 | **Elena** (Startup CTO) | Secondary | **PRIMARY** | Secondary |
 
-**Phase 1 focus:** Priya (Agent Builder) — Web UI config-based, tạo và quản lý agent không cần code.
-**Phase 2 focus:** Marcus và Elena (SDK users), Sarah — developer-centric SDK integration và enterprise features.
+### End User
+
+| Persona | Phase 1 (MVP) | Phase 2 (Scale) | Phase 3 (Ecosystem) |
+|---------|---------------|------------------|---------------------|
+| **Minh** (End User) | Session API only | + Embed widget | + Marketplace |
+
+### Stakeholders
+
+| Persona | Phase 1 (MVP) | Phase 2 (Scale) | Phase 3 (Ecosystem) |
+|---------|---------------|------------------|---------------------|
+| **Sarah** (Enterprise Architect) | Secondary | **PRIMARY** | Primary |
+| **James** (IT Ops Lead) | Secondary | **PRIMARY** | Primary |
+| **David** (Compliance Officer) | Secondary | Secondary | **PRIMARY** |
+
+**Phase 1 focus:**
+- **Builder:** Priya (Agent Builder) — Management UI config-based, tạo và quản lý agent không cần code.
+- **End User:** Session API + SSE streaming hoạt động ổn định. Không có UI riêng từ platform.
+
+**Phase 2 focus:**
+- **Builder:** Marcus và Elena (SDK users), Sarah — SDK integration, visual builder, enterprise features.
+- **End User:** Embed widget (optional), WebSocket streaming.

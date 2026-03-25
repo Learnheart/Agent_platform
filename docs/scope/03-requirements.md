@@ -1,8 +1,21 @@
 # Yêu Cầu Hệ Thống: Agent Serving Platform
 
-> **Phiên bản:** 1.0
-> **Ngày tạo:** 2026-03-25
+> **Phiên bản:** 2.0
+> **Ngày cập nhật:** 2026-03-25
 > **Tác giả:** AI Project Manager & Lead Architect
+
+---
+
+## 0. Đối Tượng Phục Vụ
+
+Requirements được phân theo đối tượng sử dụng:
+
+| Tag | Đối tượng | Ý nghĩa |
+|-----|-----------|---------|
+| **[Builder]** | Agent Builder | Tính năng phục vụ người tạo/quản lý agent (Management UI, monitoring, config) |
+| **[End User]** | End User | Tính năng phục vụ người dùng cuối tương tác với agent (Session API, streaming) |
+| **[Both]** | Cả hai | Tính năng phục vụ cả builder và end user (session, execution engine) |
+| **[Platform]** | Hệ thống | Tính năng nội bộ platform (security, observability, infrastructure) |
 
 ---
 
@@ -26,7 +39,7 @@
 
 ## 2. Functional Requirements
 
-### 2.1 Agent Management (FR-AM)
+### 2.1 Agent Management (FR-AM) [Builder]
 
 | ID | Requirement | Priority | Phase |
 |----|-------------|----------|-------|
@@ -39,7 +52,7 @@
 | FR-AM-07 | Agent template library | P2 | 2-3 |
 | FR-AM-08 | A/B deploy giữa agent versions | P2 | 3 |
 
-### 2.2 Execution Engine (FR-EE)
+### 2.2 Execution Engine (FR-EE) [Both]
 
 | ID | Requirement | Priority | Phase |
 |----|-------------|----------|-------|
@@ -59,7 +72,7 @@
 | FR-EE-14 | Reflexion pattern (evaluate → reflect → retry) | P2 | 2 |
 | FR-EE-15 | Context window management (summarize, truncate) | P0 | 1 |
 
-### 2.3 Tool System (FR-TS)
+### 2.3 Tool System (FR-TS) [Platform]
 
 | ID | Requirement | Priority | Phase |
 |----|-------------|----------|-------|
@@ -75,7 +88,7 @@
 | FR-TS-10 | Sandboxed code execution environment | P1 | 2 |
 | FR-TS-11 | Tool capability-based search (semantic) | P2 | 3 |
 
-### 2.4 Session Management (FR-SM)
+### 2.4 Session Management (FR-SM) [Both]
 
 | ID | Requirement | Priority | Phase |
 |----|-------------|----------|-------|
@@ -90,7 +103,7 @@
 | FR-SM-09 | Batch session creation | P2 | 2 |
 | FR-SM-10 | Session TTL và auto-cleanup | P1 | 1 |
 
-### 2.5 Memory System (FR-MS)
+### 2.5 Memory System (FR-MS) [Platform]
 
 | ID | Requirement | Priority | Phase |
 |----|-------------|----------|-------|
@@ -103,7 +116,7 @@
 | FR-MS-07 | Knowledge graph integration | P2 | 3 |
 | FR-MS-08 | Shared memory cho multi-agent sessions | P1 | 2 |
 
-### 2.6 LLM Integration (FR-LLM)
+### 2.6 LLM Integration (FR-LLM) [Platform]
 
 | ID | Requirement | Priority | Phase |
 |----|-------------|----------|-------|
@@ -117,7 +130,29 @@
 | FR-LLM-07 | Response caching (same prompt → cached result, temp=0) | P2 | 2 |
 | FR-LLM-08 | Token usage tracking per call | P0 | 1 |
 
-### 2.8 Web UI (FR-UI)
+### 2.7 End User Session API (FR-EU) [End User]
+
+> End User tương tác với agent qua Session API. Platform không xây UI cho end user — builder tự xây.
+
+| ID | Requirement | Priority | Phase |
+|----|-------------|----------|-------|
+| FR-EU-01 | Gửi message đến agent qua Session API (POST /sessions/{id}/messages) | P0 | 1 |
+| FR-EU-02 | Nhận streaming response qua SSE (GET /sessions/{id}/stream) | P0 | 1 |
+| FR-EU-03 | Tạo session mới với agent (POST /sessions) | P0 | 1 |
+| FR-EU-04 | Multi-turn conversation (agent nhớ context trong session) | P0 | 1 |
+| FR-EU-05 | Session authentication (API key hoặc token do builder cấp) | P0 | 1 |
+| FR-EU-06 | WebSocket streaming (bidirectional) | P1 | 2 |
+| FR-EU-07 | Embed widget (drop-in chat UI cho builder nhúng vào app) | P2 | 2 |
+| FR-EU-08 | Conversation history retrieval (GET /sessions/{id}/messages) | P1 | 1 |
+
+**Lưu ý phân quyền:**
+- End User chỉ truy cập Session API — không thể access Agent Management, Tool Registry, Monitoring.
+- Builder quyết định agent nào end user được dùng, qua cấu hình trên Management UI.
+- Authentication cho end user do builder thiết lập (API key scoped to specific agent).
+
+---
+
+### 2.8 Management UI (FR-UI) [Builder]
 
 | ID | Requirement | Priority | Phase |
 |----|-------------|----------|-------|

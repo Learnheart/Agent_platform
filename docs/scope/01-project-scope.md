@@ -15,7 +15,46 @@
 Xây dựng một nền tảng toàn diện để tạo, triển khai, và vận hành AI agent ở quy mô production, với trọng tâm vào **reliability, observability, security, và developer experience**.
 
 ### 1.3 Mission Statement
-> Giảm 80% công sức xây dựng hạ tầng cho AI agent, để developer tập trung vào business logic và agent behavior.
+> Giảm 80% công sức xây dựng hạ tầng cho AI agent, để builder tập trung vào business logic và agent behavior.
+
+### 1.4 Mô Hình Người Dùng (User Model)
+
+Platform phục vụ **hai đối tượng** với vai trò khác nhau:
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     AGENT PLATFORM                               │
+│                                                                   │
+│  ┌─────────────────────────────────────────────────────────┐    │
+│  │  BUILDER (đối tượng chính)                               │    │
+│  │  Sử dụng Management UI + API để:                         │    │
+│  │  - Tạo, cấu hình, quản lý agent                         │    │
+│  │  - Kết nối MCP tools                                      │    │
+│  │  - Thiết lập guardrails                                   │    │
+│  │  - Monitor, debug, tối ưu agent                           │    │
+│  │  - Test agent qua chat interface                          │    │
+│  └─────────────────────────────────────────────────────────┘    │
+│                                                                   │
+│  ┌─────────────────────────────────────────────────────────┐    │
+│  │  END USER (đối tượng phụ)                                │    │
+│  │  Tương tác với agent đã được builder tạo sẵn:            │    │
+│  │  - Chat với agent qua Session API / Embed widget          │    │
+│  │  - Không truy cập management UI                           │    │
+│  │  - Không biết/cần biết platform bên dưới                  │    │
+│  └─────────────────────────────────────────────────────────┘    │
+│                                                                   │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+| | **Builder** | **End User** |
+|---|---|---|
+| **Quan hệ với platform** | Trực tiếp — dùng Management UI/API | Gián tiếp — dùng agent qua Session API |
+| **Truy cập** | Management UI, toàn bộ API | Chỉ Session API (send message, nhận response) |
+| **Mục tiêu** | Tạo agent giải quyết bài toán nghiệp vụ | Được phục vụ bởi agent |
+| **Phase 1 scope** | Full management + test chat | Session API để tương tác với agent |
+| **Ai chịu trách nhiệm UX?** | Platform cung cấp Management UI | Builder chịu trách nhiệm trải nghiệm end user (platform cung cấp Session API + SSE) |
+
+> **Nguyên tắc:** Platform tập trung xây dựng trải nghiệm tốt nhất cho Builder. Với End User, platform cung cấp **runtime + API** để builder tự xây dựng trải nghiệm phù hợp với use case.
 
 ---
 
@@ -24,22 +63,27 @@ Xây dựng một nền tảng toàn diện để tạo, triển khai, và vận
 ### 2.1 Ranh Giới Hệ Thống (System Boundary)
 
 ```
+                 Builder                              End User
+                   │                                     │
+                   │ Management UI + API                 │ Session API (chat)
+                   ▼                                     ▼
 ┌─────────────────────── AGENT PLATFORM ───────────────────────┐
 │                                                               │
 │  ┌─────────────┐  ┌──────────────┐  ┌────────────────────┐  │
 │  │ Agent       │  │ Execution    │  │ Tool System        │  │
 │  │ Management  │  │ Engine       │  │ (MCP-Native)       │  │
-│  │ API         │  │              │  │                    │  │
+│  │ (Builder)   │  │              │  │                    │  │
 │  └─────────────┘  └──────────────┘  └────────────────────┘  │
 │                                                               │
 │  ┌─────────────┐  ┌──────────────┐  ┌────────────────────┐  │
 │  │ Session &   │  │ Memory       │  │ Observability      │  │
 │  │ State Mgmt  │  │ System       │  │ & Tracing          │  │
+│  │ (Both)      │  │              │  │ (Builder)          │  │
 │  └─────────────┘  └──────────────┘  └────────────────────┘  │
 │                                                               │
 │  ┌─────────────┐  ┌──────────────┐  ┌────────────────────┐  │
-│  │ Security &  │  │ API Gateway  │  │ Web UI             │  │
-│  │ Governance  │  │ & Auth       │  │ (P1 config, P2 vis)│  │
+│  │ Security &  │  │ API Gateway  │  │ Management UI      │  │
+│  │ Governance  │  │ & Auth       │  │ (Builder only)     │  │
 │  └─────────────┘  └──────────────┘  └────────────────────┘  │
 │                                                               │
 └───────────────────────────────────────────────────────────────┘
@@ -62,7 +106,8 @@ Xây dựng một nền tảng toàn diện để tạo, triển khai, và vận
 | **Observability** | Tracing (OTel), metrics, cost tracking, log aggregation |
 | **Security** | Auth (OAuth/OIDC), RBAC, tenant isolation, audit trail |
 | **API Gateway** | REST API, WebSocket streaming, rate limiting |
-| **Web UI** | Phase 1: config-based (form tạo agent, quản lý session, xem kết quả). Phase 2: visual builder |
+| **Management UI** | Phase 1: config-based (form tạo agent, quản lý session, xem kết quả) — chỉ cho Builder. Phase 2: visual builder |
+| **Session API** | REST + SSE cho End User tương tác với agent (send message, nhận streaming response) |
 | **SDK** | Optional Phase 2+ (Python, TypeScript) |
 | **Guardrails** | Schema validation, budget enforcement, tool permissions (slim Phase 1; advanced features Phase 2) |
 
@@ -76,7 +121,7 @@ Xây dựng một nền tảng toàn diện để tạo, triển khai, và vận
 | Edge deployment | Cần runtime riêng, market niche | Phase 3 |
 | A2A protocol support | Protocol còn sớm | Phase 2-3 |
 | Self-hosted LLM hosting | Khác bài toán, dùng provider có sẵn | Không |
-| End-user chatbot widget | UI cho agent builder, không phải end-user chatbot | Không |
+| End-user UI (chatbot widget, embed) | Platform cung cấp Session API, builder tự xây UI cho end user hoặc dùng embed widget (Phase 2) | Phase 2 (embed widget) |
 | Billing & subscription management | Dùng third-party (Stripe) | Phase 2 |
 
 ---
@@ -88,17 +133,17 @@ Xây dựng một nền tảng toàn diện để tạo, triển khai, và vận
 
 | Deliverable | Mô tả |
 |-------------|--------|
-| Agent Runtime | ReAct loop + Plan-then-Execute |
+| Agent Runtime | ReAct loop (Plan-then-Execute → Phase 2) |
 | MCP Tool Integration | Connect MCP servers, invoke tools |
 | Session Management | Create/run/pause/resume sessions, checkpoint |
 | State Store | Redis (hot) + PostgreSQL (warm) |
 | Memory - Short-term | Context window management với summarization |
 | Memory - Working | Plan state, artifacts, scratchpad (session-scoped) |
 | REST API | Full CRUD cho agents, sessions, tools |
-| WebSocket Streaming | Real-time event stream cho interactive sessions |
+| SSE Streaming | Real-time event stream cho interactive sessions (SSE Phase 1, WebSocket Phase 2) |
 | Tracing | OpenTelemetry instrumentation, basic trace viewer |
 | Auth | API key + OAuth 2.0 |
-| Web UI | Form tạo agent, quản lý session, xem kết quả (config-based) |
+| Management UI | Form tạo agent, quản lý session, xem kết quả (config-based) — cho Builder |
 | Cost Tracking | Per-session token usage và cost estimation |
 | Documentation | API docs, getting started guide, architecture guide |
 
@@ -199,19 +244,19 @@ Xây dựng một nền tảng toàn diện để tạo, triển khai, và vận
 | MCP tiếp tục được adopt rộng rãi | Phải support protocol khác, tăng complexity |
 | LLM API cost giảm theo thời gian | Cost management quan trọng hơn |
 | Enterprise muốn self-hosted option | On-premise scope có thể giảm |
-| Developer muốn code-first trước, GUI sau | Có thể cần GUI sớm hơn |
+| Builder muốn low/no-code UI để tạo agent | Nếu sai, cần SDK sớm hơn (hiện tại: UI-first, SDK Phase 2) |
 
 ---
 
 ## 6. Stakeholders
 
-| Stakeholder | Vai trò | Quan tâm chính |
-|-------------|---------|----------------|
-| **Developer (API consumer)** | Xây agent trên platform | DX, API quality, SDK, docs |
-| **Platform Operator** | Vận hành platform | Reliability, observability, scaling |
-| **Enterprise Architect** | Quyết định adoption | Security, governance, compliance |
-| **End User** | Tương tác với agent qua app | Response quality, latency |
-| **Compliance Officer** | Đảm bảo compliance | Audit trail, data privacy, explainability |
+| Stakeholder | Vai trò | Quan hệ với Platform | Quan tâm chính |
+|-------------|---------|---------------------|----------------|
+| **Builder** (đối tượng chính) | Tạo, cấu hình, quản lý agent | Trực tiếp — dùng Management UI + API | UX, tốc độ tạo agent, observability, cost visibility |
+| **End User** (đối tượng phụ) | Tương tác với agent đã tạo sẵn | Gián tiếp — dùng agent qua Session API | Response quality, latency, reliability |
+| **Platform Operator** | Vận hành platform | Trực tiếp — infrastructure | Reliability, observability, scaling |
+| **Enterprise Architect** | Quyết định adoption | Stakeholder | Security, governance, compliance |
+| **Compliance Officer** | Đảm bảo compliance | Stakeholder | Audit trail, data privacy, explainability |
 
 ---
 
@@ -221,10 +266,11 @@ Xây dựng một nền tảng toàn diện để tạo, triển khai, và vận
 - [ ] Agent runtime xử lý được ReAct và Plan-then-Execute patterns
 - [ ] MCP tool integration hoạt động với ≥ 5 MCP servers phổ biến
 - [ ] Checkpoint/resume success rate > 99%
-- [ ] REST API + WebSocket streaming đầy đủ
-- [ ] Web UI cho phép tạo agent trong <5 phút
+- [ ] REST API + SSE streaming đầy đủ
+- [ ] Management UI cho phép Builder tạo agent trong <5 phút
 - [ ] Tracing hiển thị được full execution trace
 - [ ] Auth + tenant isolation hoạt động
-- [ ] User tạo agent đầu tiên < 15 phút
+- [ ] Builder tạo agent đầu tiên < 15 phút
+- [ ] End User gửi message và nhận response qua Session API thành công
 - [ ] Load test: 1,000 concurrent sessions stable
 - [ ] Security audit passed (basic level)

@@ -8,15 +8,15 @@
 ## 1. Phạm Vi Hệ Thống
 
 **Platform chịu trách nhiệm:** runtime execution, state management, security, observability, cost control, data governance.
-**User chịu trách nhiệm:** agent logic (system prompt, tool selection, model config).
+**Builder chịu trách nhiệm:** agent logic (system prompt, tool selection, model config).
+**End User:** tương tác với agent qua Session API — platform cung cấp runtime, builder xây UX.
 
 ```
+  Builder ──────────────>  Management UI + API (tạo/quản lý agent)
+                                    |
                     +---------------------------------------------------------+
                     |               AGENT PLATFORM (our system)               |
                     |                                                         |
-  Users ----------->|  Web UI / API                                           |
-                    |       |                                                 |
-                    |       v                                                 |
                     |  Agent Management --- Session --- Execution Engine      |
                     |       |                  |              |               |
                     |       |           +------+------+      |               |
@@ -30,9 +30,9 @@
                     |  PostgreSQL / Redis            LLM GW / Tool RT        |
                     |                                   |         |           |
                     +-----------------------------------+---------+-----------+
-                                                        |         |
-                                                        v         v
-                                                  LLM Providers  MCP Servers
+                                    |                   |         |
+  End User ─────────────>  Session API + SSE            v         v
+                           (chat với agent)       LLM Providers  MCP Servers
                                                   (Anthropic     (DB, GitHub,
                                                    Phase 1)       Slack, ...)
 ```
@@ -55,8 +55,9 @@
 ```
 +----------------------------------------------------------------------+
 |                            CLIENT LAYER                                |
-|  Web UI (Phase 1) | REST API | SSE | Webhook Consumer                  |
-|  [WebSocket -> Phase 2]                                                |
+|  Builder: Management UI (Phase 1) | REST API | SSE                     |
+|  End User: Session API | SSE                                           |
+|  [WebSocket -> Phase 2] [Webhook Consumer]                             |
 +-------------------------------+--------------------------------------+
                                 |
 +-------------------------------v--------------------------------------+
@@ -124,8 +125,9 @@
 
 ```
 +---- API Layer --------------------------------------------------------+
-|  REST Controller | SSE Handler | Auth Middleware                       |
-|  Web UI (React/Next.js)                                                |
+|  Builder: REST Controller (full) | Management UI (React/Next.js)       |
+|  End User: Session Controller (scoped) | SSE Handler                   |
+|  Auth Middleware (Builder creds / End User scoped token)               |
 |  [WebSocket Handler -> Phase 2]                                        |
 +-----------------------------+------------------------------------------+
                               |
@@ -195,7 +197,7 @@
 
 ## 5. Luồng Xử Lý Hệ Thống (End-to-End Flows)
 
-### 5.1 Luồng Tổng Quan: Từ API Request đến Response
+### 5.1 Luồng Tổng Quan: End User gửi message → nhận response
 
 ```
 +------+     +---------+     +---------+     +----------+     +----------+
@@ -408,10 +410,10 @@ Cost: tracked per step, aggregated to session/agent/tenant
                          RUNNING --wait_input()--> WAITING_INPUT
 ```
 
-### 5.5 Luồng Agent Creation & Configuration
+### 5.5 Luồng Agent Creation & Configuration [Builder]
 
 ```
-Developer        SDK/API         Agent Manager      Tool Manager      PostgreSQL
+Builder          Management UI   Agent Manager      Tool Manager      PostgreSQL
  |                  |                 |                   |                |
  |--create_agent()-->|                 |                   |                |
  |  {name,          |                 |                   |                |
@@ -572,39 +574,52 @@ Developer        SDK/API         Agent Manager      Tool Manager      PostgreSQL
 
 ## 8. API Surface (Phase 1)
 
-> **API được sử dụng bởi Web UI (Phase 1). SDK optional Phase 2+.**
+> API phân theo đối tượng: **Builder API** (Management UI + automation) và **End User API** (tương tác với agent).
 
 ```
-# Agent Management
+# ═══════════════════════════════════════════════════════
+# BUILDER API (Management UI + Builder automation)
+# Auth: Builder credentials (OAuth/API Key)
+# ═══════════════════════════════════════════════════════
+
+# Agent Management [Builder]
 POST   /api/v1/agents                    Create agent
 GET    /api/v1/agents                    List agents
 GET    /api/v1/agents/{id}               Get agent
 PUT    /api/v1/agents/{id}               Update agent
 DELETE /api/v1/agents/{id}               Delete agent
 
-# Session
-POST   /api/v1/sessions                  Create + start session
+# Session Management [Builder] — xem, quản lý sessions (cả builder test + end user)
+GET    /api/v1/sessions                  List sessions (filter by agent, state, user type)
 GET    /api/v1/sessions/{id}             Get session state
-POST   /api/v1/sessions/{id}/messages    Send message
 POST   /api/v1/sessions/{id}/pause       Pause
 POST   /api/v1/sessions/{id}/resume      Resume
 GET    /api/v1/sessions/{id}/trace       Execution trace
 GET    /api/v1/sessions/{id}/cost        Cost breakdown
 
-# Streaming (Phase 1: SSE)
-GET    /api/v1/sessions/{id}/stream      Real-time events (SSE)
-# Note: WebSocket streaming -> Phase 2
-
-# Tools
+# Tools [Builder]
 GET    /api/v1/tools                     List tools
 
-# Memory (Phase 2)
+# Governance [Builder]
+GET    /api/v1/audit/sessions/{id}       Audit trail for session
+GET    /api/v1/audit/agents/{id}         Audit trail for agent
+
+# Memory (Phase 2) [Builder]
 POST   /api/v1/memory/{agent_id}         Store memory
 GET    /api/v1/memory/{agent_id}/search  Semantic search
 
-# Governance (Phase 1)
-GET    /api/v1/audit/sessions/{id}       Audit trail for session
-GET    /api/v1/audit/agents/{id}         Audit trail for agent
+# ═══════════════════════════════════════════════════════
+# END USER API (tương tác với agent)
+# Auth: Scoped API key / token (do builder cấp)
+# End User chỉ truy cập được agent mà builder cho phép
+# ═══════════════════════════════════════════════════════
+
+# Session [End User]
+POST   /api/v1/sessions                  Create + start session (với agent_id)
+POST   /api/v1/sessions/{id}/messages    Send message
+GET    /api/v1/sessions/{id}/messages    Get conversation history
+GET    /api/v1/sessions/{id}/stream      Real-time events (SSE, Phase 1)
+# Note: WebSocket streaming -> Phase 2
 ```
 
 ---

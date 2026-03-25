@@ -9,6 +9,10 @@
 
 **"15-Minute Test":** Từ đăng nhập đến agent đầu tiên chạy, gọi tool, trả kết quả trong 15 phút.
 
+**Đối tượng:** Tài liệu này mô tả trải nghiệm của **Builder** — người tạo và quản lý agent trên platform. Builder truy cập Management UI + API.
+
+> **End User** (người dùng agent đã tạo sẵn) tương tác qua Session API — platform không cung cấp UI cho end user. Xem [03-requirements.md § FR-EU](03-requirements.md) cho End User requirements.
+
 **Người dùng mục tiêu:** Agent Builder — có kiến thức về AI agent nhưng không cần viết code. Môi trường low/no-code.
 
 ---
@@ -45,16 +49,18 @@ Form cấu hình:
 Preview → Tạo → Agent sẵn sàng
 ```
 
-### 3.2 Quản Lý Session
+### 3.2 Test Agent (Builder Chat)
+
+> Chat interface trên Management UI là để **Builder test agent**. End User không dùng UI này — họ tương tác qua Session API.
 
 ```
-Agent detail page → "Tạo Session" hoặc "Chat"
+Agent detail page → "Test Chat"
     ↓
-Chat interface:
-  - Gửi message
+Builder chat interface (test & debug):
+  - Gửi message như end user sẽ gửi
   - Xem streaming response (SSE)
-  - Xem tool calls real-time
-  - Xem thinking/reasoning steps
+  - Xem tool calls real-time (debug info — end user không thấy)
+  - Xem thinking/reasoning steps (debug info)
     ↓
 Session list: trạng thái, chi phí, số steps, thời gian
 ```
@@ -104,19 +110,21 @@ UI form tạo ra JSON config gửi đến API:
 
 ---
 
-## 5. Trang UI Phase 1
+## 5. Trang Management UI Phase 1 (Builder only)
 
-| Trang | Chức năng |
-|-------|----------|
-| **Dashboard** | Tổng quan: số agent, sessions đang chạy, chi phí tổng |
-| **Agent List** | Danh sách agent, trạng thái, actions (edit, delete, chat) |
-| **Agent Create/Edit** | Form cấu hình agent (system prompt, model, tools, guardrails) |
-| **Agent Detail** | Config hiện tại, session history, metrics |
-| **Session List** | Danh sách sessions, filter theo agent/trạng thái/thời gian |
-| **Session Chat** | Chat interface với agent, streaming response |
-| **Session Trace** | Timeline execution trace, chi phí, guardrail checks |
-| **Tool Registry** | Danh sách MCP servers và tools đã kết nối |
-| **Settings** | API keys, LLM provider config |
+> Tất cả trang dưới đây chỉ dành cho Builder. End User không truy cập Management UI.
+
+| Trang | Chức năng | Đối tượng |
+|-------|----------|-----------|
+| **Dashboard** | Tổng quan: số agent, sessions đang chạy, chi phí tổng | Builder |
+| **Agent List** | Danh sách agent, trạng thái, actions (edit, delete, test) | Builder |
+| **Agent Create/Edit** | Form cấu hình agent (system prompt, model, tools, guardrails) | Builder |
+| **Agent Detail** | Config hiện tại, session history, metrics, Session API endpoint | Builder |
+| **Session List** | Danh sách sessions (cả builder test + end user), filter theo agent/trạng thái/thời gian | Builder |
+| **Test Chat** | Chat interface để builder test agent, xem debug info (tool calls, reasoning) | Builder |
+| **Session Trace** | Timeline execution trace, chi phí, guardrail checks | Builder |
+| **Tool Registry** | Danh sách MCP servers và tools đã kết nối | Builder |
+| **Settings** | API keys, LLM provider config, End User auth config | Builder |
 
 ---
 
