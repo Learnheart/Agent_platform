@@ -89,64 +89,28 @@
 
 Lớp service xử lý business logic: registry, discovery, schema conversion. Là interface chính mà các service khác (Executor, API) sử dụng.
 
-```python
-class ToolManager:
-    """
-    Service layer for all tool operations.
-    Entry point for executor and API layer.
-    """
+**ToolManager** là service layer cho tất cả các thao tác liên quan đến tool. Đây là entry point cho executor và API layer.
 
-    def __init__(
-        self,
-        registry: ToolRegistry,
-        discovery: ToolDiscoveryService,
-        schema_converter: SchemaConverter,
-        runtime: ToolRuntime,
-    ): ...
+**Constructor** nhận 4 dependency: ToolRegistry, ToolDiscoveryService, SchemaConverter, ToolRuntime.
 
-    # --- Registry ---
-    async def list_tools(self, tenant_id: str, agent_id: str | None = None) -> list[ToolInfo]:
-        """List tools available to a tenant/agent, combining static + discovered."""
+**Các method:**
 
-    async def get_tool(self, tenant_id: str, tool_id: str) -> ToolInfo:
-        """Get full tool details including schema."""
+| Method | Parameters | Return Type | Mô tả |
+|--------|-----------|-------------|--------|
+| `list_tools` | tenant_id: str, agent_id: str \| None = None | list[ToolInfo] | Liệt kê tools available cho một tenant/agent, kết hợp static + discovered |
+| `get_tool` | tenant_id: str, tool_id: str | ToolInfo | Lấy full tool details bao gồm schema |
+| `discover_from_server` | tenant_id: str, server_config: MCPServerConfig | list[ToolInfo] | Kết nối đến MCP server, enumerate tools, đăng ký chúng |
+| `refresh_tools` | tenant_id: str, server_id: str | list[ToolInfo] | Re-discover tools từ server hiện có (schema có thể đã thay đổi) |
+| `invoke` | tenant_id: str, session_id: str, tool_call: ToolCall | ToolResult | Full invocation pipeline (xem chi tiết bên dưới) |
+| `get_tool_schemas_for_llm` | tenant_id: str, agent_id: str, llm_provider: str | list[dict] | Lấy tool schemas đã format cho LLM provider cụ thể (MCP → OpenAI/Anthropic/Google) |
 
-    # --- Discovery ---
-    async def discover_from_server(self, tenant_id: str, server_config: MCPServerConfig) -> list[ToolInfo]:
-        """Connect to an MCP server, enumerate tools, register them."""
-
-    async def refresh_tools(self, tenant_id: str, server_id: str) -> list[ToolInfo]:
-        """Re-discover tools from an existing server (schema may have changed)."""
-
-    # --- Execution ---
-    async def invoke(
-        self,
-        tenant_id: str,
-        session_id: str,
-        tool_call: ToolCall,
-    ) -> ToolResult:
-        """
-        Full invocation pipeline:
-        1. Resolve tool from registry
-        2. (Permission check is done by Guardrails before this call)
-        3. Route to correct MCP server via runtime
-        4. Handle timeout, retry, circuit breaker
-        5. Process and normalize result
-        6. Track cost and emit trace event
-        """
-
-    # --- Schema for LLM ---
-    async def get_tool_schemas_for_llm(
-        self,
-        tenant_id: str,
-        agent_id: str,
-        llm_provider: str,
-    ) -> list[dict]:
-        """
-        Get tool schemas formatted for a specific LLM provider.
-        MCP tool schema → OpenAI function calling format / Anthropic tool_use format.
-        """
-```
+**Chi tiết invoke pipeline:**
+1. Resolve tool từ registry
+2. Permission check được Guardrails thực hiện trước khi gọi method này
+3. Route đến đúng MCP server qua runtime
+4. Xử lý timeout, retry, circuit breaker
+5. Process và normalize result
+6. Track cost và emit trace event
 
 ---
 
@@ -154,103 +118,70 @@ class ToolManager:
 
 Lưu trữ metadata của tất cả tools available trong platform, phân vùng theo tenant.
 
-```python
-@dataclass
-class ToolInfo:
-    id: str                                     # "mcp:github:create_issue"
-    name: str                                   # "create_issue"
-    server_id: str                              # ID of the MCP server this tool belongs to
-    namespace: str                              # "mcp:github"
-    description: str                            # "Create a new issue in a GitHub repository"
-    input_schema: dict                          # JSONSchema for input parameters
-    output_schema: dict | None                  # JSONSchema for output (optional)
+**Data model ToolInfo:**
 
-    # Operational metadata
-    execution_mode: Literal["sync", "async"]    # "sync" = wait for result, "async" = fire-and-forget
-    default_timeout_ms: int                     # Per-tool timeout
-    estimated_latency_ms: int | None            # Historical average latency
-    estimated_cost: float | None                # Estimated cost per call (USD), if applicable
-    idempotent: bool                            # Safe to retry?
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| id | str | — | Định danh tool, ví dụ "mcp:github:create_issue" |
+| name | str | — | Tên tool, ví dụ "create_issue" |
+| server_id | str | — | ID của MCP server mà tool này thuộc về |
+| namespace | str | — | Namespace phân vùng, ví dụ "mcp:github" |
+| description | str | — | Mô tả tool, ví dụ "Create a new issue in a GitHub repository" |
+| input_schema | dict | — | JSONSchema cho input parameters |
+| output_schema | dict \| None | — | JSONSchema cho output (optional) |
+| execution_mode | Literal["sync", "async"] | — | "sync" = chờ kết quả, "async" = fire-and-forget |
+| default_timeout_ms | int | — | Timeout riêng cho tool |
+| estimated_latency_ms | int \| None | — | Trung bình latency từ dữ liệu lịch sử |
+| estimated_cost | float \| None | — | Chi phí ước tính mỗi lần gọi (USD), nếu có |
+| idempotent | bool | — | Có an toàn để retry không? |
+| permission_scope | list[str] | — | Ví dụ ["github:write", "issues:create"] |
+| risk_level | Literal["low", "medium", "high", "critical"] | — | Mức rủi ro |
+| requires_approval | bool | — | Cài đặt HITL mặc định |
+| tenant_id | str | — | Tenant sở hữu |
+| visibility | Literal["platform", "tenant", "agent"] | — | Phạm vi hiển thị |
+| discovered_at | datetime | — | Thời điểm phát hiện |
+| last_verified_at | datetime | — | Lần xác minh cuối |
+| status | Literal["active", "degraded", "unavailable"] | — | Trạng thái hiện tại |
 
-    # Access control metadata
-    permission_scope: list[str]                 # ["github:write", "issues:create"]
-    risk_level: Literal["low", "medium", "high", "critical"]
-    requires_approval: bool                     # Default HITL setting
+**Storage — Bảng `tools`:**
 
-    # Tenant scoping
-    tenant_id: str
-    visibility: Literal["platform", "tenant", "agent"]
+| Column | Type | Default | Description |
+|--------|------|---------|-------------|
+| id | TEXT NOT NULL | — | Tool ID |
+| tenant_id | TEXT NOT NULL | — | Tenant ID |
+| server_id | TEXT NOT NULL | — | MCP server ID |
+| name | TEXT NOT NULL | — | Tên tool |
+| namespace | TEXT NOT NULL | — | Namespace |
+| description | TEXT NOT NULL | — | Mô tả |
+| input_schema | JSONB NOT NULL | — | JSONSchema cho input |
+| output_schema | JSONB | — | JSONSchema cho output (nullable) |
+| execution_mode | TEXT | 'sync' | Chế độ thực thi |
+| default_timeout_ms | INT | 30000 | Timeout mặc định |
+| estimated_latency_ms | INT | — | Latency ước tính |
+| estimated_cost | FLOAT | — | Chi phí ước tính |
+| idempotent | BOOLEAN | FALSE | Có idempotent không |
+| permission_scope | TEXT[] | '{}' | Danh sách permission scope |
+| risk_level | TEXT | 'low' | Mức rủi ro |
+| requires_approval | BOOLEAN | FALSE | Cần phê duyệt không |
+| visibility | TEXT | 'tenant' | Phạm vi hiển thị |
+| discovered_at | TIMESTAMPTZ | NOW() | Thời điểm phát hiện |
+| last_verified_at | TIMESTAMPTZ | NOW() | Lần xác minh cuối |
+| status | TEXT | 'active' | Trạng thái |
 
-    # Lifecycle
-    discovered_at: datetime
-    last_verified_at: datetime
-    status: Literal["active", "degraded", "unavailable"]
-```
+- **Primary Key:** (tenant_id, id)
+- **Foreign Key:** (tenant_id, server_id) tham chiếu đến mcp_servers(tenant_id, id) ON DELETE CASCADE
+- **Row-Level Security:** Bật RLS với policy tenant_isolation, lọc theo current_setting('app.current_tenant')
+- **Index:** idx_tools_namespace trên (tenant_id, namespace) cho fast lookup by namespace
 
-**Storage:**
+**ToolRegistry — Các method:**
 
-```sql
-CREATE TABLE tools (
-    id TEXT NOT NULL,
-    tenant_id TEXT NOT NULL,
-    server_id TEXT NOT NULL,
-    name TEXT NOT NULL,
-    namespace TEXT NOT NULL,
-    description TEXT NOT NULL,
-    input_schema JSONB NOT NULL,
-    output_schema JSONB,
-
-    execution_mode TEXT DEFAULT 'sync',
-    default_timeout_ms INT DEFAULT 30000,
-    estimated_latency_ms INT,
-    estimated_cost FLOAT,
-    idempotent BOOLEAN DEFAULT FALSE,
-
-    permission_scope TEXT[] DEFAULT '{}',
-    risk_level TEXT DEFAULT 'low',
-    requires_approval BOOLEAN DEFAULT FALSE,
-    visibility TEXT DEFAULT 'tenant',
-
-    discovered_at TIMESTAMPTZ DEFAULT NOW(),
-    last_verified_at TIMESTAMPTZ DEFAULT NOW(),
-    status TEXT DEFAULT 'active',
-
-    PRIMARY KEY (tenant_id, id),
-    CONSTRAINT fk_server FOREIGN KEY (tenant_id, server_id)
-        REFERENCES mcp_servers(tenant_id, id) ON DELETE CASCADE
-);
-
--- Row-level security
-ALTER TABLE tools ENABLE ROW LEVEL SECURITY;
-CREATE POLICY tenant_isolation ON tools
-    USING (tenant_id = current_setting('app.current_tenant'));
-
--- Fast lookup by namespace
-CREATE INDEX idx_tools_namespace ON tools (tenant_id, namespace);
-```
-
-```python
-class ToolRegistry:
-    async def register(self, tool: ToolInfo) -> None:
-        """Register or update a tool in the registry."""
-
-    async def unregister(self, tenant_id: str, tool_id: str) -> None:
-        """Remove a tool from the registry."""
-
-    async def list_by_agent(self, tenant_id: str, agent_id: str) -> list[ToolInfo]:
-        """
-        Get tools for a specific agent:
-        1. Load agent definition → agent.tools (allowlist of tool patterns)
-        2. Match against registry using glob patterns
-        3. Return matched tools with status = 'active'
-        """
-
-    async def search(self, tenant_id: str, query: str, top_k: int = 10) -> list[ToolInfo]:
-        """Semantic search across tool descriptions (Phase 2, capability-based discovery)."""
-
-    async def update_status(self, tenant_id: str, tool_id: str, status: str) -> None:
-        """Mark tool as active/degraded/unavailable based on health checks."""
-```
+| Method | Parameters | Return Type | Mô tả |
+|--------|-----------|-------------|--------|
+| `register` | tool: ToolInfo | None | Đăng ký hoặc cập nhật tool trong registry |
+| `unregister` | tenant_id: str, tool_id: str | None | Xoá tool khỏi registry |
+| `list_by_agent` | tenant_id: str, agent_id: str | list[ToolInfo] | Lấy tools cho agent cụ thể: (1) load agent definition lấy allowlist tool patterns, (2) match với registry bằng glob patterns, (3) trả về matched tools có status = 'active' |
+| `search` | tenant_id: str, query: str, top_k: int = 10 | list[ToolInfo] | Semantic search trên tool descriptions (Phase 2, capability-based discovery) |
+| `update_status` | tenant_id: str, tool_id: str, status: str | None | Đánh dấu tool là active/degraded/unavailable dựa trên health checks |
 
 ---
 
@@ -258,38 +189,13 @@ class ToolRegistry:
 
 Kết nối đến MCP server, liệt kê tools, và đồng bộ vào registry.
 
-```python
-class ToolDiscoveryService:
-    async def discover(
-        self,
-        tenant_id: str,
-        server_config: MCPServerConfig,
-    ) -> DiscoveryResult:
-        """
-        1. Connect to MCP server via configured transport
-        2. Call tools/list (MCP protocol method)
-        3. For each tool: parse schema, assign namespace, compute risk level
-        4. Register in ToolRegistry
-        5. Return summary of discovered tools
+**ToolDiscoveryService — Các method:**
 
-        Also discovers:
-        - Resources (via resources/list) → registered as read-only tools
-        - Prompts (via prompts/list) → registered as prompt templates
-        """
-
-    async def refresh(self, tenant_id: str, server_id: str) -> DiscoveryResult:
-        """
-        Re-run discovery for an existing server.
-        Detects: new tools, removed tools, schema changes.
-        Updates registry accordingly.
-        """
-
-    async def verify_tool(self, tenant_id: str, tool_id: str) -> VerificationResult:
-        """
-        Verify a specific tool is still available and schema matches registry.
-        Called periodically by health monitor.
-        """
-```
+| Method | Parameters | Return Type | Mô tả |
+|--------|-----------|-------------|--------|
+| `discover` | tenant_id: str, server_config: MCPServerConfig | DiscoveryResult | Kết nối MCP server, gọi tools/list, parse schema, assign namespace, compute risk level, đăng ký vào ToolRegistry. Cũng discover Resources (via resources/list, đăng ký như read-only tools) và Prompts (via prompts/list, đăng ký như prompt templates) |
+| `refresh` | tenant_id: str, server_id: str | DiscoveryResult | Re-run discovery cho server hiện có. Detect: new tools, removed tools, schema changes. Cập nhật registry tương ứng |
+| `verify_tool` | tenant_id: str, tool_id: str | VerificationResult | Xác minh tool cụ thể vẫn available và schema khớp registry. Được health monitor gọi định kỳ |
 
 ---
 
@@ -297,123 +203,37 @@ class ToolDiscoveryService:
 
 Chuyển đổi MCP tool schema sang format mà từng LLM provider yêu cầu.
 
-```python
-class SchemaConverter:
-    """
-    MCP tool schema (JSONSchema-based) → LLM-specific format.
-    Each LLM provider has slightly different tool/function calling format.
-    """
+**SchemaConverter** chuyển đổi MCP tool schema (JSONSchema-based) sang format riêng của từng LLM provider. Mỗi provider có format tool/function calling hơi khác nhau.
 
-    def to_anthropic(self, tool: ToolInfo) -> dict:
-        """
-        MCP tool → Anthropic tool_use format.
-        Anthropic expects JSONSchema in input_schema field directly.
-        MCP tool schema IS JSONSchema → minimal transformation needed.
-        """
-        # MCP tool.inputSchema is already JSONSchema — Anthropic accepts it directly
-        schema = tool.input_schema.copy()
+**Các method chính:**
 
-        # Ensure required top-level fields
-        schema.setdefault("type", "object")
-        schema.setdefault("properties", {})
+| Method | Parameters | Return Type | Mô tả |
+|--------|-----------|-------------|--------|
+| `to_anthropic` | tool: ToolInfo | dict | Chuyển MCP tool sang Anthropic tool_use format |
+| `to_openai` | tool: ToolInfo | dict | Chuyển MCP tool sang OpenAI function calling format (Phase 2) |
+| `to_google` | tool: ToolInfo | dict | Chuyển MCP tool sang Gemini function declaration format (Phase 2) |
+| `convert` | tool: ToolInfo, provider: str | dict | Dispatch sang converter phù hợp dựa trên LLM provider. Raise ValueError nếu provider không hỗ trợ |
+| `convert_batch` | tools: list[ToolInfo], provider: str | list[dict] | Chuyển đổi nhiều tools cùng lúc cho một lần gọi LLM |
+| `from_llm_tool_call` | raw_call: dict, provider: str | ToolCall | Parse LLM tool_call response ngược lại thành ToolCall model chuẩn hoá |
+| `_sanitize_name` | name: str, namespace: str | str | Tạo tên tool cho LLM, phải unique và là valid identifier |
+| `_build_description` | tool: ToolInfo | str | Tạo description string cho LLM, bao gồm namespace context |
 
-        return {
-            "name": self._sanitize_name(tool.name, tool.namespace),
-            "description": self._build_description(tool),
-            "input_schema": schema,
-        }
+**Quy tắc chuyển đổi cho từng provider:**
 
-    def to_openai(self, tool: ToolInfo) -> dict:
-        """MCP tool → OpenAI function calling format (Phase 2)."""
-        schema = tool.input_schema.copy()
-        schema.setdefault("type", "object")
+- **Anthropic (to_anthropic):** MCP tool.inputSchema đã là JSONSchema — Anthropic chấp nhận trực tiếp. Đảm bảo có type="object" và properties={}. Output structure: name (sanitized), description (có prefix namespace), input_schema (JSONSchema).
 
-        return {
-            "type": "function",
-            "function": {
-                "name": self._sanitize_name(tool.name, tool.namespace),
-                "description": self._build_description(tool),
-                "parameters": schema,
-            },
-        }
+- **OpenAI (to_openai):** Bọc trong structure: type="function", bên trong có function object chứa name (sanitized), description, và parameters (JSONSchema).
 
-    def to_google(self, tool: ToolInfo) -> dict:
-        """MCP tool → Gemini function declaration format (Phase 2)."""
-        schema = tool.input_schema.copy()
-        schema.setdefault("type", "object")
+- **Google (to_google):** Structure tương tự OpenAI: name (sanitized), description, parameters (JSONSchema).
 
-        return {
-            "name": self._sanitize_name(tool.name, tool.namespace),
-            "description": self._build_description(tool),
-            "parameters": schema,
-        }
+**Quy tắc parse ngược (from_llm_tool_call):**
 
-    def convert(self, tool: ToolInfo, provider: str) -> dict:
-        """Dispatch to the correct converter based on LLM provider."""
-        converters = {
-            "anthropic": self.to_anthropic,
-            "openai": self.to_openai,
-            "google": self.to_google,
-        }
-        converter = converters.get(provider)
-        if not converter:
-            raise ValueError(f"Unknown LLM provider: {provider}")
-        return converter(tool)
+- **Anthropic:** Content block type="tool_use" — đã được LLM Gateway parse sẵn. Lấy id, name, và input (arguments) trực tiếp.
+- **OpenAI:** Format {"id", "function": {"name", "arguments": JSON string}} — cần json.loads cho arguments vì OpenAI trả về dạng JSON string.
 
-    def convert_batch(self, tools: list[ToolInfo], provider: str) -> list[dict]:
-        """Convert multiple tools for a single LLM call."""
-        return [self.convert(tool, provider) for tool in tools]
+**Quy tắc sanitize name (_sanitize_name):** Dùng namespace prefix để tránh collision. Trích xuất short namespace (ví dụ "mcp:github" thành "github"), ghép thành "github__create_issue". Thay ký tự không hợp lệ bằng underscore. Anthropic cho phép [a-zA-Z0-9_-], tối đa 64 ký tự. Cắt xuống 64 ký tự nếu vượt quá.
 
-    def from_llm_tool_call(self, raw_call: dict, provider: str) -> ToolCall:
-        """
-        Parse LLM tool_call response back into normalized ToolCall model.
-        Each provider returns tool calls in a different format.
-        """
-        match provider:
-            case "anthropic":
-                # Anthropic: content_block with type="tool_use"
-                # Already parsed by LLM Gateway into ToolCall format
-                return ToolCall(
-                    id=raw_call["id"],
-                    name=raw_call["name"],
-                    arguments=raw_call.get("input", {}),
-                )
-            case "openai":
-                # OpenAI: {"id", "function": {"name", "arguments": JSON string}}
-                return ToolCall(
-                    id=raw_call["id"],
-                    name=raw_call["function"]["name"],
-                    arguments=json.loads(raw_call["function"]["arguments"]),
-                )
-            case _:
-                raise ValueError(f"Unknown provider: {provider}")
-
-    def _sanitize_name(self, name: str, namespace: str) -> str:
-        """
-        Build tool name for LLM. Must be unique and valid identifier.
-
-        Strategy:
-        - Use namespace prefix to avoid collisions: "github__create_issue"
-        - Replace invalid chars: ':', '-', '.' → '_'
-        - Anthropic allows: [a-zA-Z0-9_-], max 64 chars
-
-        Example: namespace="mcp:github", name="create_issue" → "github__create_issue"
-        """
-        # Extract short namespace: "mcp:github" → "github"
-        short_ns = namespace.split(":")[-1] if ":" in namespace else namespace
-        full_name = f"{short_ns}__{name}"
-        # Sanitize: only allow alphanumeric, underscore, hyphen
-        sanitized = re.sub(r"[^a-zA-Z0-9_-]", "_", full_name)
-        return sanitized[:64]
-
-    def _build_description(self, tool: ToolInfo) -> str:
-        """
-        Build description string for LLM.
-        Include namespace context so LLM understands which service this tool belongs to.
-        """
-        prefix = f"[{tool.namespace}] " if tool.namespace else ""
-        return f"{prefix}{tool.description}"
-```
+**Quy tắc build description (_build_description):** Thêm prefix namespace trong ngoặc vuông trước description, ví dụ "[mcp:github] Create a new issue in a GitHub repository", để LLM hiểu tool thuộc service nào.
 
 **Tại sao cần converter?**
 - MCP tool schema = JSONSchema (chuẩn)
@@ -432,572 +252,275 @@ Lớp thực thi: quản lý kết nối MCP, gọi tools, xử lý kết quả.
 
 Quản lý vòng đời kết nối đến tất cả MCP servers.
 
-```python
-class MCPClientManager:
-    """
-    Manages connections to all MCP servers for a platform instance.
-    Each MCP server has exactly one managed connection (pooled per tenant if needed).
-    """
+**MCPClientManager** quản lý connections đến tất cả MCP servers cho một platform instance. Mỗi MCP server có đúng một managed connection (pooled per tenant nếu cần).
 
-    def __init__(
-        self,
-        transport_manager: TransportManager,
-        health_monitor: HealthMonitor,
-        connection_pool: ConnectionPool,
-    ): ...
+**Constructor** nhận 3 dependency: TransportManager, HealthMonitor, ConnectionPool.
 
-    async def get_client(self, tenant_id: str, server_id: str) -> MCPClient:
-        """
-        Get or create an MCP client connection.
-        1. Check pool for existing connection
-        2. If exists and healthy → return
-        3. If not exists → create via transport manager
-        4. If unhealthy → reconnect
-        """
-        key = (tenant_id, server_id)
-        client = await self._pool.get(tenant_id, server_id)
+**Các method:**
 
-        if client is not None:
-            health = await self._health_monitor.get_cached_status(server_id)
-            if health and health.status != "unhealthy":
-                return client
-            # Unhealthy → close and reconnect
-            await self._pool.remove(tenant_id, server_id)
-            await client.close()
+| Method | Parameters | Return Type | Mô tả |
+|--------|-----------|-------------|--------|
+| `get_client` | tenant_id: str, server_id: str | MCPClient | Lấy hoặc tạo MCP client connection. Kiểm tra pool → nếu tồn tại và healthy thì trả về → nếu không tồn tại thì tạo mới qua transport manager → nếu unhealthy thì đóng và reconnect |
+| `connect_server` | server_config: MCPServerConfig | MCPClient | Thiết lập kết nối mới: (1) tạo transport, (2) tạo MCP client, (3) initialize handshake, (4) negotiate capabilities, (5) thêm vào connection pool, (6) cập nhật server status và last_connected_at, (7) bắt đầu health monitoring |
+| `disconnect_server` | tenant_id: str, server_id: str | None | Đóng kết nối gracefully và xoá khỏi pool. Unregister khỏi health monitor trước |
+| `disconnect_all` | tenant_id: str | None | Ngắt kết nối tất cả servers của một tenant (cleanup khi tenant bị deactivate) |
+| `close_all` | — | None | Shutdown: ngắt mọi server trên tất cả tenants |
 
-        # Create new connection
-        server_config = await self._load_server_config(tenant_id, server_id)
-        client = await self.connect_server(server_config)
-        return client
-
-    async def connect_server(self, server_config: MCPServerConfig) -> MCPClient:
-        """
-        Establish new connection to an MCP server.
-        1. Select transport (stdio / HTTP+SSE / Streamable HTTP)
-        2. Perform MCP initialize handshake
-        3. Negotiate capabilities
-        4. Add to connection pool
-        5. Start health monitoring
-        """
-        # 1. Create transport
-        transport = await self._transport_manager.create_transport(server_config)
-
-        # 2. Create MCP client with transport
-        client = MCPClient(transport)
-
-        # 3. Initialize handshake
-        init_result = await client.initialize(
-            client_info={"name": "agent-platform", "version": "1.0"},
-            capabilities={"tools": True, "resources": True},
-        )
-        server_capabilities = init_result.capabilities
-
-        # 4. Send initialized notification
-        await client.initialized()
-
-        # 5. Add to pool
-        await self._pool.put(
-            server_config.tenant_id,
-            server_config.id,
-            client,
-        )
-
-        # 6. Update server status
-        server_config.status = "connected"
-        server_config.last_connected_at = datetime.utcnow()
-
-        # 7. Start health monitoring for this server
-        await self._health_monitor.register(
-            server_config.tenant_id,
-            server_config.id,
-            interval_seconds=server_config.health_check_interval_seconds,
-        )
-
-        return client
-
-    async def disconnect_server(self, tenant_id: str, server_id: str) -> None:
-        """Gracefully close connection and remove from pool."""
-        await self._health_monitor.unregister(server_id)
-        client = await self._pool.get(tenant_id, server_id)
-        if client:
-            await client.close()
-            await self._pool.remove(tenant_id, server_id)
-
-    async def disconnect_all(self, tenant_id: str) -> None:
-        """Disconnect all servers for a tenant (cleanup on tenant deactivation)."""
-        stats = await self._pool.get_stats()
-        for server_id in stats.get(tenant_id, {}).keys():
-            await self.disconnect_server(tenant_id, server_id)
-
-    async def close_all(self) -> None:
-        """Shutdown: disconnect every server across all tenants."""
-        all_stats = await self._pool.get_stats()
-        for tenant_id, servers in all_stats.items():
-            for server_id in servers:
-                await self.disconnect_server(tenant_id, server_id)
-```
+**Chi tiết connect_server:** Khi initialize handshake, gửi client_info (name: "agent-platform", version: "1.0") và capabilities (tools: True, resources: True). Sau khi nhận server capabilities, gửi notification initialized() để hoàn tất handshake.
 
 #### 2.2.2 Transport Manager
 
 Xử lý các transport protocol mà MCP hỗ trợ.
 
-```python
-class TransportManager:
-    """
-    Creates the appropriate transport for connecting to an MCP server.
-    MCP supports multiple transport mechanisms.
-    """
+**TransportManager** tạo transport phù hợp cho mỗi MCP server connection. MCP hỗ trợ nhiều cơ chế transport.
 
-    async def create_transport(self, config: MCPServerConfig) -> MCPTransport:
-        match config.transport:
-            case "stdio":
-                return await self._create_stdio_transport(config)
-            case "sse":
-                return await self._create_sse_transport(config)
-            case "streamable_http":
-                return await self._create_streamable_http_transport(config)
+**Các method:**
 
-    async def _create_stdio_transport(self, config: MCPServerConfig) -> StdioTransport:
-        """
-        Launch MCP server as subprocess, communicate via stdin/stdout.
+| Method | Parameters | Return Type | Mô tả |
+|--------|-----------|-------------|--------|
+| `create_transport` | config: MCPServerConfig | MCPTransport | Dispatch tạo transport dựa trên config.transport: "stdio", "sse", hoặc "streamable_http" |
+| `_create_stdio_transport` | config: MCPServerConfig | StdioTransport | Khởi chạy MCP server dạng subprocess, giao tiếp qua stdin/stdout |
+| `_create_sse_transport` | config: MCPServerConfig | SSETransport | Kết nối đến remote MCP server qua HTTP + Server-Sent Events |
+| `_create_streamable_http_transport` | config: MCPServerConfig | StreamableHTTPTransport | MCP transport mới hơn: single HTTP endpoint, bidirectional streaming. Ưu tiên cho remote servers (đơn giản hơn SSE) |
 
-        Lifecycle:
-        1. Spawn process: config.command + config.args + config.env
-        2. Wrap stdin/stdout as JSON-RPC transport
-        3. Monitor process health (exit code, stderr)
-        4. Auto-restart on crash (configurable max restarts)
+**Chi tiết stdio transport lifecycle:**
+1. Spawn process: config.command + config.args + config.env
+2. Wrap stdin/stdout thành JSON-RPC transport
+3. Monitor process health (exit code, stderr)
+4. Auto-restart khi crash (configurable max restarts)
 
-        Security:
-        - Process runs under restricted user (not root)
-        - Resource limits: max memory, max CPU, max open files
-        - Filesystem access restricted to config.allowed_paths
-        """
+**Security cho stdio:** Process chạy dưới restricted user (không phải root). Resource limits: max memory, max CPU, max open files. Filesystem access giới hạn theo config.allowed_paths.
 
-    async def _create_sse_transport(self, config: MCPServerConfig) -> SSETransport:
-        """
-        Connect to remote MCP server via HTTP + Server-Sent Events.
+**Chi tiết SSE transport lifecycle:**
+1. HTTP POST đến config.url cho requests
+2. SSE stream từ config.url/events cho responses
+3. Auth qua config.headers (Bearer token, API key)
+4. Reconnect khi disconnect với exponential backoff
 
-        Lifecycle:
-        1. HTTP POST to config.url for requests
-        2. SSE stream from config.url/events for responses
-        3. Auth via config.headers (Bearer token, API key)
-        4. Reconnect on disconnect with exponential backoff
+**Security cho SSE:** Bắt buộc TLS (reject plain HTTP). Hỗ trợ auth token rotation. Response size limits.
 
-        Security:
-        - TLS required (reject plain HTTP)
-        - Auth token rotation support
-        - Response size limits
-        """
+**MCP Server Configuration Model — MCPServerConfig:**
 
-    async def _create_streamable_http_transport(self, config: MCPServerConfig) -> StreamableHTTPTransport:
-        """
-        Newer MCP transport: single HTTP endpoint, bidirectional streaming.
-        Preferred for remote servers (simpler than SSE).
-        """
-```
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| id | str | — | Server ID |
+| tenant_id | str | — | Tenant ID |
+| name | str | — | Tên hiển thị (human-readable) |
+| description | str | — | Mô tả server |
+| transport | Literal["stdio", "sse", "streamable_http"] | — | Loại transport |
+| command | str \| None | — | Lệnh stdio, ví dụ "npx", "python", "docker" |
+| args | list[str] \| None | — | Arguments, ví dụ ["-y", "@modelcontextprotocol/server-postgres"] |
+| env | dict[str, str] \| None | — | Biến môi trường (có thể chứa secrets) |
+| cwd | str \| None | — | Working directory |
+| url | str \| None | — | URL cho HTTP transport, ví dụ "https://mcp.example.com/v1" |
+| headers | dict[str, str] \| None | — | Auth headers |
+| connect_timeout_ms | int | 10000 | Timeout kết nối |
+| request_timeout_ms | int | 30000 | Timeout request |
+| max_retries | int | 3 | Số lần retry tối đa |
+| retry_backoff_ms | int | 1000 | Backoff giữa các retry |
+| auto_start | bool | True | Khởi động cùng platform? |
+| max_restarts | int | 5 | Số lần auto-restart tối đa (cho stdio) |
+| health_check_interval_seconds | int | 60 | Tần suất health check |
+| allowed_tools | list[str] \| None | — | Whitelist tools (None = tất cả) |
+| blocked_tools | list[str] \| None | — | Blacklist tools |
+| sandbox_level | Literal["none", "process", "container"] | "none" | Mức sandbox |
+| status | Literal["connected", "connecting", "disconnected", "error"] | "disconnected" | Trạng thái hiện tại |
+| last_connected_at | datetime \| None | None | Lần kết nối cuối |
+| last_error | str \| None | None | Lỗi cuối cùng |
 
-**MCP Server Configuration Model:**
+**Storage — Bảng `mcp_servers`:**
 
-```python
-@dataclass
-class MCPServerConfig:
-    id: str
-    tenant_id: str
-    name: str                               # Human-readable name
-    description: str
+| Column | Type | Default | Description |
+|--------|------|---------|-------------|
+| id | TEXT NOT NULL | — | Server ID |
+| tenant_id | TEXT NOT NULL | — | Tenant ID |
+| name | TEXT NOT NULL | — | Tên server |
+| description | TEXT | — | Mô tả |
+| transport | TEXT NOT NULL | — | Loại transport |
+| command | TEXT | — | Lệnh stdio |
+| args | JSONB | — | Arguments |
+| env_encrypted | BYTEA | — | Biến môi trường (encrypted) |
+| url | TEXT | — | URL cho HTTP transport |
+| headers_encrypted | BYTEA | — | Auth headers (encrypted) |
+| connect_timeout_ms | INT | 10000 | Timeout kết nối |
+| request_timeout_ms | INT | 30000 | Timeout request |
+| max_retries | INT | 3 | Số lần retry |
+| auto_start | BOOLEAN | TRUE | Tự khởi động |
+| health_check_interval_seconds | INT | 60 | Tần suất health check |
+| allowed_tools | TEXT[] | — | Whitelist tools |
+| blocked_tools | TEXT[] | — | Blacklist tools |
+| sandbox_level | TEXT | 'none' | Mức sandbox |
+| status | TEXT | 'disconnected' | Trạng thái |
+| last_connected_at | TIMESTAMPTZ | — | Lần kết nối cuối |
+| last_error | TEXT | — | Lỗi cuối |
+| created_at | TIMESTAMPTZ | NOW() | Thời điểm tạo |
+| updated_at | TIMESTAMPTZ | NOW() | Thời điểm cập nhật |
 
-    # Transport
-    transport: Literal["stdio", "sse", "streamable_http"]
-
-    # stdio-specific
-    command: str | None                     # e.g., "npx", "python", "docker"
-    args: list[str] | None                  # e.g., ["-y", "@modelcontextprotocol/server-postgres"]
-    env: dict[str, str] | None             # Environment variables (may contain secrets)
-    cwd: str | None                         # Working directory
-
-    # HTTP-specific (sse / streamable_http)
-    url: str | None                         # e.g., "https://mcp.example.com/v1"
-    headers: dict[str, str] | None          # Auth headers
-
-    # Connection settings
-    connect_timeout_ms: int = 10_000
-    request_timeout_ms: int = 30_000
-    max_retries: int = 3
-    retry_backoff_ms: int = 1_000
-
-    # Lifecycle
-    auto_start: bool = True                 # Start on platform boot?
-    max_restarts: int = 5                   # For stdio: max auto-restarts
-    health_check_interval_seconds: int = 60
-
-    # Security
-    allowed_tools: list[str] | None         # Whitelist (None = all)
-    blocked_tools: list[str] | None         # Blacklist
-    sandbox_level: Literal["none", "process", "container"] = "none"
-
-    # Status
-    status: Literal["connected", "connecting", "disconnected", "error"] = "disconnected"
-    last_connected_at: datetime | None = None
-    last_error: str | None = None
-```
-
-**Storage:**
-
-```sql
-CREATE TABLE mcp_servers (
-    id TEXT NOT NULL,
-    tenant_id TEXT NOT NULL,
-    name TEXT NOT NULL,
-    description TEXT,
-
-    transport TEXT NOT NULL,
-    command TEXT,
-    args JSONB,
-    env_encrypted BYTEA,                    -- Encrypted environment variables
-    url TEXT,
-    headers_encrypted BYTEA,                -- Encrypted auth headers
-
-    connect_timeout_ms INT DEFAULT 10000,
-    request_timeout_ms INT DEFAULT 30000,
-    max_retries INT DEFAULT 3,
-    auto_start BOOLEAN DEFAULT TRUE,
-    health_check_interval_seconds INT DEFAULT 60,
-
-    allowed_tools TEXT[],
-    blocked_tools TEXT[],
-    sandbox_level TEXT DEFAULT 'none',
-
-    status TEXT DEFAULT 'disconnected',
-    last_connected_at TIMESTAMPTZ,
-    last_error TEXT,
-
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW(),
-
-    PRIMARY KEY (tenant_id, id)
-);
-
-ALTER TABLE mcp_servers ENABLE ROW LEVEL SECURITY;
-CREATE POLICY tenant_isolation ON mcp_servers
-    USING (tenant_id = current_setting('app.current_tenant'));
-```
+- **Primary Key:** (tenant_id, id)
+- **Row-Level Security:** Bật RLS với policy tenant_isolation, lọc theo current_setting('app.current_tenant')
 
 #### 2.2.3 Connection Pool
 
-```python
-class ConnectionPool:
-    """
-    Manages active MCP client connections.
-    Key: (tenant_id, server_id) → MCPClient
+**ConnectionPool** quản lý các active MCP client connections. Key là cặp (tenant_id, server_id), value là MCPClient.
 
-    Behaviors:
-    - Lazy connection: connect on first use
-    - Max connections per tenant: configurable (default 20)
-    - Idle timeout: close connections unused for > 10 minutes
-    - Graceful shutdown: close all on platform stop
-    """
+**Behaviors:**
+- Lazy connection: chỉ kết nối khi sử dụng lần đầu
+- Max connections per tenant: configurable (mặc định 20)
+- Idle timeout: đóng connection không dùng quá 10 phút
+- Graceful shutdown: đóng tất cả khi platform dừng
 
-    async def get(self, tenant_id: str, server_id: str) -> MCPClient | None
-    async def put(self, tenant_id: str, server_id: str, client: MCPClient) -> None
-    async def remove(self, tenant_id: str, server_id: str) -> None
-    async def get_stats(self) -> PoolStats    # active, idle, total per tenant
-```
+**Các method:**
+
+| Method | Parameters | Return Type | Mô tả |
+|--------|-----------|-------------|--------|
+| `get` | tenant_id: str, server_id: str | MCPClient \| None | Lấy client từ pool |
+| `put` | tenant_id: str, server_id: str, client: MCPClient | None | Thêm client vào pool |
+| `remove` | tenant_id: str, server_id: str | None | Xoá client khỏi pool |
+| `get_stats` | — | PoolStats | Thống kê active, idle, total theo tenant |
 
 #### 2.2.4 Health Monitor
 
-```python
-class HealthMonitor:
-    """
-    Monitors MCP server health and manages auto-recovery.
-    Runs as background task.
-    """
+**HealthMonitor** giám sát sức khoẻ MCP server và quản lý auto-recovery. Chạy dạng background task.
 
-    async def start(self) -> None:
-        """Start monitoring loop."""
+**Các method:**
 
-    async def check_server(self, tenant_id: str, server_id: str) -> HealthStatus:
-        """
-        Health check for a single server:
-        1. Send MCP ping (or tools/list as lightweight check)
-        2. Measure response latency
-        3. Compare with historical baseline
+| Method | Parameters | Return Type | Mô tả |
+|--------|-----------|-------------|--------|
+| `start` | — | None | Bắt đầu monitoring loop |
+| `check_server` | tenant_id: str, server_id: str | HealthStatus | Health check cho một server: (1) gửi MCP ping hoặc tools/list, (2) đo response latency, (3) so sánh với baseline lịch sử |
+| `_on_unhealthy` | tenant_id: str, server_id: str, status: HealthStatus | None | Recovery actions khi server unhealthy |
 
-        Returns: HealthStatus(
-            status: "healthy" | "degraded" | "unhealthy",
-            latency_ms: float,
-            last_check: datetime,
-            consecutive_failures: int,
-        )
-        """
+**HealthStatus** bao gồm: status ("healthy" / "degraded" / "unhealthy"), latency_ms (float), last_check (datetime), consecutive_failures (int).
 
-    async def _on_unhealthy(self, tenant_id: str, server_id: str, status: HealthStatus) -> None:
-        """
-        Recovery actions:
-        - stdio server: kill and restart process
-        - HTTP server: reconnect with backoff
-        - After max_restarts: mark as unavailable, alert
-        - Update tool status in registry → executor won't try to call unavailable tools
-        """
-```
+**Recovery actions (_on_unhealthy):**
+- stdio server: kill và restart process
+- HTTP server: reconnect với backoff
+- Sau max_restarts: đánh dấu unavailable, gửi alert
+- Cập nhật tool status trong registry → executor sẽ không gọi tools unavailable
 
 #### 2.2.5 Invocation Handler
 
 Core logic cho việc gọi tool qua MCP.
 
-```python
-class InvocationHandler:
-    """
-    Handles the actual invocation of a tool on an MCP server.
-    Includes timeout, retry, circuit breaker, and cost tracking.
-    """
+**InvocationHandler** xử lý việc gọi tool thực tế trên MCP server. Bao gồm timeout, retry, circuit breaker, và cost tracking.
 
-    def __init__(
-        self,
-        circuit_breaker: CircuitBreaker,
-        result_processor: ResultProcessor,
-        tracer,
-    ):
-        self._cb = circuit_breaker
-        self._processor = result_processor
-        self._tracer = tracer
+**Constructor** nhận 3 dependency: CircuitBreaker, ResultProcessor, tracer (OpenTelemetry).
 
-    async def invoke(
-        self,
-        client: MCPClient,
-        tool_call: ToolCall,
-        tool_info: ToolInfo,
-        timeout_ms: int | None = None,
-    ) -> ToolResult:
-        """
-        Full invocation pipeline with timeout, circuit breaker, retry, and metrics.
-        """
-        effective_timeout = timeout_ms or tool_info.default_timeout_ms
-        server_id = tool_info.server_id
-        start = time.monotonic()
+**Method chính — invoke:**
 
-        # 1. Check circuit breaker
-        if not await self._cb.allow_request(server_id):
-            return ToolResult(
-                tool_call_id=tool_call.id,
-                tool_name=tool_call.name,
-                content=f"Tool server temporarily unavailable (circuit breaker open for {server_id})",
-                is_error=True,
-                metadata={"circuit_breaker": "open"},
-                latency_ms=0,
-            )
+| Parameter | Type | Mô tả |
+|-----------|------|--------|
+| client | MCPClient | MCP client connection |
+| tool_call | ToolCall | Tool call cần thực thi |
+| tool_info | ToolInfo | Metadata của tool |
+| timeout_ms | int \| None | Timeout tùy chỉnh (mặc định dùng tool_info.default_timeout_ms) |
+| **Return** | ToolResult | Kết quả thực thi |
 
-        # 2. Execute with retry (if idempotent)
-        try:
-            with self._tracer.start_as_current_span("tool.invoke") as span:
-                span.set_attribute("tool.name", tool_call.name)
-                span.set_attribute("tool.server_id", server_id)
+**Invoke pipeline chi tiết:**
 
-                if tool_info.idempotent and tool_info.max_retries > 0:
-                    raw_result = await self._invoke_with_retry(
-                        client, tool_call, tool_info, effective_timeout,
-                    )
-                else:
-                    raw_result = await self._invoke_with_timeout(
-                        client, tool_call.name, tool_call.arguments, effective_timeout,
-                    )
+1. **Circuit breaker check:** Nếu circuit breaker OPEN cho server_id, trả về ToolResult lỗi ngay lập tức ("Tool server temporarily unavailable").
 
-                latency_ms = (time.monotonic() - start) * 1000
-                span.set_attribute("tool.latency_ms", latency_ms)
+2. **Execute with retry:** Nếu tool là idempotent và max_retries > 0, gọi qua _invoke_with_retry. Ngược lại gọi _invoke_with_timeout trực tiếp. Ghi OTel span với attributes tool.name và tool.server_id.
 
-                # 3. Record success
-                await self._cb.record_success(server_id)
+3. **Record success:** Gọi circuit_breaker.record_success() để reset failure count.
 
-                # 4. Process result
-                result = await self._processor.process(raw_result, tool_info)
-                result.tool_call_id = tool_call.id
-                result.latency_ms = latency_ms
-                return result
+4. **Process result:** Gọi ResultProcessor.process() để normalize kết quả. Gán tool_call_id và latency_ms.
 
-        except ToolTimeoutError:
-            latency_ms = (time.monotonic() - start) * 1000
-            await self._cb.record_failure(server_id)
-            return ToolResult(
-                tool_call_id=tool_call.id,
-                tool_name=tool_call.name,
-                content=f"Tool '{tool_call.name}' timed out after {effective_timeout}ms",
-                is_error=True,
-                metadata={"error_category": "tool_timeout"},
-                latency_ms=latency_ms,
-            )
+**Xử lý lỗi:**
+- **ToolTimeoutError:** Record failure trong circuit breaker, trả về ToolResult lỗi với error_category "tool_timeout"
+- **MCPConnectionError:** Record failure, trả về ToolResult lỗi với error_category "tool_connection_error"
+- **Exception khác:** Record failure, trả về ToolResult lỗi với error_category "tool_execution_error"
 
-        except MCPConnectionError as e:
-            latency_ms = (time.monotonic() - start) * 1000
-            await self._cb.record_failure(server_id)
-            return ToolResult(
-                tool_call_id=tool_call.id,
-                tool_name=tool_call.name,
-                content=f"Connection error calling '{tool_call.name}': {e}",
-                is_error=True,
-                metadata={"error_category": "tool_connection_error"},
-                latency_ms=latency_ms,
-            )
+Trong mọi trường hợp lỗi, latency_ms vẫn được tính và ghi nhận.
 
-        except Exception as e:
-            latency_ms = (time.monotonic() - start) * 1000
-            await self._cb.record_failure(server_id)
-            return ToolResult(
-                tool_call_id=tool_call.id,
-                tool_name=tool_call.name,
-                content=f"Error calling '{tool_call.name}': {e}",
-                is_error=True,
-                metadata={"error_category": "tool_execution_error"},
-                latency_ms=latency_ms,
-            )
+**_invoke_with_timeout:** Gọi MCP client.call_tool() với asyncio.timeout (timeout_ms / 1000). Raise ToolTimeoutError nếu hết thời gian.
 
-    async def _invoke_with_timeout(self, client, name, arguments, timeout_ms) -> dict:
-        """MCP tools/call with configurable timeout."""
-        try:
-            async with asyncio.timeout(timeout_ms / 1000):
-                return await client.call_tool(name, arguments)
-        except asyncio.TimeoutError:
-            raise ToolTimeoutError(f"Tool {name} timed out after {timeout_ms}ms")
-
-    async def _invoke_with_retry(self, client, tool_call, tool_info, timeout_ms) -> dict:
-        """
-        Retry logic for idempotent tools:
-        - Exponential backoff: 1s, 2s, 4s
-        - Max retries from server config
-        - Timeout → retry
-        - Server error (MCP error code) → retry
-        - Client error (invalid params) → do NOT retry
-        - Connection error → raise (let caller handle reconnect)
-        """
-        max_retries = tool_info.max_retries or 2
-        backoff_base = 1.0
-        last_error = None
-
-        for attempt in range(1 + max_retries):
-            try:
-                return await self._invoke_with_timeout(
-                    client, tool_call.name, tool_call.arguments, timeout_ms,
-                )
-            except ToolTimeoutError as e:
-                last_error = e
-                if attempt < max_retries:
-                    wait = backoff_base * (2 ** attempt)
-                    await asyncio.sleep(wait)
-                    continue
-            except MCPServerError as e:
-                # MCP server returned error — retry if not client fault
-                if e.code and e.code >= -32600:  # client errors in JSON-RPC
-                    raise  # don't retry client errors
-                last_error = e
-                if attempt < max_retries:
-                    wait = backoff_base * (2 ** attempt)
-                    await asyncio.sleep(wait)
-                    continue
-
-        raise last_error
-```
+**_invoke_with_retry — Retry logic cho idempotent tools:**
+- Exponential backoff: 1s, 2s, 4s
+- Max retries lấy từ tool_info.max_retries hoặc mặc định 2
+- Timeout → retry
+- Server error (MCP error code) → retry
+- Client error (invalid params, JSON-RPC error code >= -32600) → KHÔNG retry, raise ngay
+- Connection error → raise, để caller xử lý reconnect
 
 **Circuit Breaker:**
 
-```python
-class CircuitBreaker:
-    """
-    Per-server circuit breaker to prevent cascading failures.
+**CircuitBreaker** ngăn cascading failures, hoạt động per-server.
 
-    States:
-    - CLOSED: normal operation, requests flow through
-    - OPEN: server is failing, reject requests immediately
-    - HALF_OPEN: allow one test request to check recovery
+**Các trạng thái:**
+- **CLOSED:** Hoạt động bình thường, requests đi qua
+- **OPEN:** Server đang lỗi, reject requests ngay lập tức
+- **HALF_OPEN:** Cho phép 1 test request để kiểm tra recovery
 
-    Transitions:
-    CLOSED → OPEN: when failure_count >= threshold (default 5) within window (default 60s)
-    OPEN → HALF_OPEN: after cooldown period (default 30s)
-    HALF_OPEN → CLOSED: if test request succeeds
-    HALF_OPEN → OPEN: if test request fails
-    """
+**Chuyển trạng thái:**
+- CLOSED → OPEN: khi failure_count >= threshold (mặc định 5) trong window (mặc định 60s)
+- OPEN → HALF_OPEN: sau cooldown period (mặc định 30s)
+- HALF_OPEN → CLOSED: nếu test request thành công
+- HALF_OPEN → OPEN: nếu test request thất bại
 
-    async def allow_request(self, server_id: str) -> bool
-    async def record_success(self, server_id: str) -> None
-    async def record_failure(self, server_id: str) -> None
-    async def get_state(self, server_id: str) -> CircuitState
-```
+**Các method:**
+
+| Method | Parameters | Return Type | Mô tả |
+|--------|-----------|-------------|--------|
+| `allow_request` | server_id: str | bool | Kiểm tra có cho phép request không |
+| `record_success` | server_id: str | None | Ghi nhận thành công |
+| `record_failure` | server_id: str | None | Ghi nhận thất bại |
+| `get_state` | server_id: str | CircuitState | Lấy trạng thái hiện tại |
 
 #### 2.2.6 Result Processor
 
-```python
-class ResultProcessor:
-    """
-    Normalizes and processes raw MCP tool results before returning to the executor.
-    """
+**ResultProcessor** chuẩn hoá và xử lý raw MCP tool results trước khi trả về executor.
 
-    async def process(self, raw_result: dict, tool_info: ToolInfo) -> ToolResult:
-        """
-        1. Extract content from MCP result format
-           MCP returns: { content: [{ type: "text", text: "..." }], isError: bool }
+**Method process** (raw_result: dict, tool_info: ToolInfo) → ToolResult, thực hiện:
 
-        2. Normalize to platform format:
-           ToolResult(content: str, is_error: bool, metadata: dict)
+1. **Extract content:** Từ MCP result format (content: [{type: "text", text: "..."}], isError: bool)
+2. **Normalize:** Sang platform format ToolResult(content: str, is_error: bool, metadata: dict)
+3. **Truncate nếu quá lớn:** Nếu content vượt max_result_tokens, cắt với marker "[...truncated, full result stored]". Lưu full result vào artifact store, tham chiếu trong metadata. Khi truncate, giữ 60% đầu + 40% cuối của budget, chèn truncation marker ở giữa.
+4. **Redact sensitive data** nếu PII policy yêu cầu
+5. **Calculate cost** nếu tool có cost model
 
-        3. Truncate if too large (protect context window):
-           - If content > max_result_tokens: truncate with "[...truncated, full result stored]"
-           - Store full result in artifact store, reference in metadata
+**Data model ToolResult:**
 
-        4. Redact sensitive data if PII policy requires
-
-        5. Calculate cost (if tool has cost model)
-        """
-
-    def _truncate(self, content: str, max_tokens: int = 4000) -> tuple[str, bool]:
-        """Truncate content to fit in context window, preserving start and end."""
-        # Keep first 60% + last 40% of budget, insert truncation marker
-```
-
-**ToolResult model:**
-
-```python
-@dataclass
-class ToolResult:
-    tool_call_id: str               # Matches the LLM's tool_call ID
-    tool_name: str
-    content: str                    # Normalized text content
-    is_error: bool
-    metadata: dict                  # latency_ms, server_id, truncated, etc.
-    artifacts: list[str] | None     # References to large stored artifacts
-    cost_usd: float | None         # Cost of this invocation (if tracked)
-    latency_ms: float
-```
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| tool_call_id | str | — | Khớp với tool_call ID của LLM |
+| tool_name | str | — | Tên tool |
+| content | str | — | Nội dung text đã normalize |
+| is_error | bool | — | Có phải lỗi không |
+| metadata | dict | — | Bao gồm latency_ms, server_id, truncated, v.v. |
+| artifacts | list[str] \| None | — | Tham chiếu đến large stored artifacts |
+| cost_usd | float \| None | — | Chi phí invocation (nếu tracked) |
+| latency_ms | float | — | Thời gian thực thi |
 
 #### 2.2.7 Sandbox Manager (Phase 2)
 
 Cho các tool cần chạy code hoặc truy cập filesystem.
 
-```python
-class SandboxManager:
-    """
-    Provides isolated execution environments for tools that need them.
-    Used primarily for code execution tools and filesystem tools.
-    """
+**SandboxManager** cung cấp môi trường thực thi isolated cho tools cần thiết. Sử dụng chủ yếu cho code execution tools và filesystem tools.
 
-    async def execute_in_sandbox(
-        self,
-        sandbox_level: Literal["process", "container"],
-        command: str,
-        args: list[str],
-        env: dict[str, str],
-        timeout_seconds: int = 30,
-        constraints: SandboxConstraints | None = None,
-    ) -> SandboxResult:
-        """
-        Process sandbox: seccomp + AppArmor profile
-        Container sandbox: ephemeral container (gVisor runtime)
+**Method execute_in_sandbox:**
 
-        Constraints:
-        - max_memory_mb: 512 (default)
-        - max_cpu_seconds: 30
-        - network_access: False (default)
-        - allowed_network_hosts: [] (whitelist if network_access=True)
-        - writable_paths: ["/tmp/workspace"]
-        - readonly_paths: ["/data/input"]
-        """
-```
+| Parameter | Type | Default | Mô tả |
+|-----------|------|---------|--------|
+| sandbox_level | Literal["process", "container"] | — | Mức sandbox |
+| command | str | — | Lệnh thực thi |
+| args | list[str] | — | Arguments |
+| env | dict[str, str] | — | Biến môi trường |
+| timeout_seconds | int | 30 | Timeout |
+| constraints | SandboxConstraints \| None | None | Ràng buộc tài nguyên |
+| **Return** | SandboxResult | — | Kết quả thực thi |
+
+**Sandbox levels:**
+- **Process sandbox:** seccomp + AppArmor profile
+- **Container sandbox:** ephemeral container (gVisor runtime)
+
+**SandboxConstraints mặc định:**
+- max_memory_mb: 512
+- max_cpu_seconds: 30
+- network_access: False
+- allowed_network_hosts: [] (whitelist nếu network_access=True)
+- writable_paths: ["/tmp/workspace"]
+- readonly_paths: ["/data/input"]
 
 ---
 
@@ -1327,20 +850,14 @@ Platform (Client)                    MCP Server
 
 ### 4.3 Handling `notifications/tools/list_changed`
 
-Khi MCP server thông báo tool list thay đổi:
+Khi MCP server thông báo tool list thay đổi, platform thực hiện hàm **_on_tools_changed**(server_id: str):
 
-```python
-async def _on_tools_changed(self, server_id: str) -> None:
-    """
-    Server notified that its tool list has changed.
-    1. Re-enumerate tools via tools/list
-    2. Diff with current registry
-    3. Register new tools
-    4. Mark removed tools as unavailable
-    5. Update changed schemas
-    6. Log changes for audit
-    """
-```
+1. Re-enumerate tools via tools/list
+2. Diff với current registry
+3. Register new tools
+4. Mark removed tools as unavailable
+5. Update changed schemas
+6. Log changes cho audit
 
 ---
 
@@ -1348,55 +865,29 @@ async def _on_tools_changed(self, server_id: str) -> None:
 
 ### 5.1 Agent Definition — Tool Section
 
-```json
-{
-  "agent_id": "customer-support-v2",
-  "tools": {
-    "mcp_servers": [
-      {
-        "server_id": "crm-server",
-        "allowed_tools": ["read_customer", "update_customer", "search_customers"],
-        "blocked_tools": ["delete_customer"]
-      },
-      {
-        "server_id": "email-server",
-        "allowed_tools": ["send_email"],
-        "overrides": {
-          "send_email": {
-            "requires_approval": true,
-            "max_calls_per_session": 3,
-            "timeout_ms": 10000
-          }
-        }
-      }
-    ],
-    "builtin_tools": ["memory_store", "memory_search"],
-    "max_tools_in_prompt": 20
-  }
-}
-```
+Mỗi agent definition chứa một section "tools" cấu hình MCP servers và tools mà agent được phép sử dụng. Cấu trúc bao gồm:
+
+**Top-level fields:**
+- **agent_id:** Định danh agent, ví dụ "customer-support-v2"
+- **tools:** Object chứa cấu hình tools
+
+**Trong "tools":**
+- **mcp_servers:** Mảng các server config, mỗi item gồm:
+  - **server_id:** ID server cần kết nối, ví dụ "crm-server"
+  - **allowed_tools:** Danh sách tools cho phép, ví dụ ["read_customer", "update_customer", "search_customers"]
+  - **blocked_tools:** Danh sách tools bị chặn, ví dụ ["delete_customer"]
+  - **overrides:** (optional) Object ghi đè config cho từng tool cụ thể, mỗi key là tên tool, value chứa các override như requires_approval (bool), max_calls_per_session (int), timeout_ms (int)
+- **builtin_tools:** Danh sách built-in tools, ví dụ ["memory_store", "memory_search"]
+- **max_tools_in_prompt:** Số lượng tools tối đa đưa vào prompt, ví dụ 20
 
 ### 5.2 Tool Selection for Prompt
 
 Khi agent có nhiều tools (>20), không nên đưa tất cả vào prompt (ảnh hưởng LLM performance). Platform hỗ trợ **tool selection**:
 
-```python
-class ToolSelector:
-    async def select_for_prompt(
-        self,
-        all_tools: list[ToolInfo],
-        context: ContextPayload,
-        max_tools: int = 20,
-    ) -> list[ToolInfo]:
-        """
-        Strategy:
-        Phase 1 (simple): Return all tools if <= max_tools, else return
-                          most recently used + always-include list.
+**ToolSelector** có method **select_for_prompt**(all_tools: list[ToolInfo], context: ContextPayload, max_tools: int = 20) → list[ToolInfo]:
 
-        Phase 2 (smart):  Embed tool descriptions + current user message,
-                          return top-K most relevant tools by cosine similarity.
-        """
-```
+- **Phase 1 (simple):** Trả về tất cả tools nếu <= max_tools, ngược lại trả về most recently used + always-include list.
+- **Phase 2 (smart):** Embed tool descriptions + current user message, trả về top-K most relevant tools theo cosine similarity.
 
 ---
 
@@ -1415,19 +906,20 @@ class ToolSelector:
 
 MCP servers often need credentials (DB passwords, API keys). Platform handles this securely:
 
-```python
-@dataclass
-class MCPServerSecrets:
-    server_id: str
-    tenant_id: str
-    env_vars: dict[str, str]        # Encrypted at rest
-    auth_headers: dict[str, str]    # Encrypted at rest
+**MCPServerSecrets** data model:
 
-# Storage: encrypted in PostgreSQL using tenant-specific encryption key
-# Never logged, never included in traces
-# Injected into server process env at spawn time only
-# Rotatable via API without server restart
-```
+| Field | Type | Description |
+|-------|------|-------------|
+| server_id | str | Server ID |
+| tenant_id | str | Tenant ID |
+| env_vars | dict[str, str] | Biến môi trường (encrypted at rest) |
+| auth_headers | dict[str, str] | Auth headers (encrypted at rest) |
+
+**Quy tắc bảo mật:**
+- Storage: encrypted trong PostgreSQL sử dụng tenant-specific encryption key
+- Never logged, never included in traces
+- Inject vào server process env chỉ tại thời điểm spawn
+- Rotatable qua API mà không cần restart server
 
 ### 6.3 Network Isolation
 

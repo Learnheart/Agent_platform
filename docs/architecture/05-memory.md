@@ -89,49 +89,27 @@
 
 ### 3.1 Memory Manager (Orchestrator)
 
-```python
-class MemoryManager:
-    """
-    Orchestrates all memory operations across layers.
-    Each method enforces tenant isolation before delegating.
-    """
+**MemoryManager** orchestrates all memory operations across layers. Each method enforces tenant isolation before delegating to the appropriate memory layer.
 
-    def __init__(
-        self,
-        short_term: ShortTermMemory,
-        long_term: LongTermMemory | None,      # Phase 2
-        working: WorkingMemory,
-        episodic: EpisodicMemory | None,        # Phase 3
-        shared: SharedMemory | None,            # Phase 2
-    ): ...
+**Constructor dependencies:**
 
-    # Called by executor before each LLM call
-    async def build_context(
-        self,
-        session_id: str,
-        agent_config: AgentConfig,
-    ) -> ContextPayload:
-        """
-        Assembles the full context for an LLM call:
-        1. System prompt (from agent config)
-        2. Working memory (plan state, artifacts)
-        3. Short-term memory (recent conversation, managed by strategy)
-        """
+| Dependency | Type | Phase |
+|------------|------|-------|
+| short_term | ShortTermMemory | Phase 1 |
+| long_term | LongTermMemory hoặc None | Phase 2 |
+| working | WorkingMemory | Phase 1 |
+| episodic | EpisodicMemory hoặc None | Phase 3 |
+| shared | SharedMemory hoặc None | Phase 2 |
 
-    # Called by executor after each step
-    async def update(
-        self,
-        session_id: str,
-        messages: list[Message],
-        artifacts: dict | None,
-    ) -> None:
-        """Updates short-term buffer and working memory."""
+**Methods:**
 
-    # Phase 2: explicit memory store/search (agent-initiated or API)
-    async def store(self, tenant_id: str, agent_id: str, content: str, metadata: dict) -> str
-    async def search(self, tenant_id: str, agent_id: str, query: str, top_k: int = 5) -> list[MemoryEntry]
-    async def delete(self, tenant_id: str, memory_id: str) -> bool
-```
+| Method | Parameters | Return Type | Description |
+|--------|-----------|-------------|-------------|
+| build_context | session_id: str, agent_config: AgentConfig | ContextPayload | Được Executor gọi trước mỗi LLM call. Assembles full context gồm: (1) System prompt từ agent config, (2) Working memory (plan state, artifacts), (3) Short-term memory (recent conversation, managed by strategy). |
+| update | session_id: str, messages: list[Message], artifacts: dict hoặc None | None | Được Executor gọi sau mỗi step. Cập nhật short-term buffer và working memory. |
+| store | tenant_id: str, agent_id: str, content: str, metadata: dict | str | Phase 2: Lưu nội dung vào long-term memory. Trả về memory ID. |
+| search | tenant_id: str, agent_id: str, query: str, top_k: int (default 5) | list[MemoryEntry] | Phase 2: Tìm kiếm trong long-term memory. |
+| delete | tenant_id: str, memory_id: str | bool | Phase 2: Xoá memory entry. |
 
 ---
 
@@ -142,22 +120,11 @@ class MemoryManager:
 
 #### 3.2.1 Context Window Manager
 
-```python
-class ContextWindowManager:
-    async def build(
-        self,
-        full_history: list[Message],
-        system_prompt: str,
-        injected_context: str | None,       # working memory
-        tool_schemas: list[dict],
-        strategy: ContextStrategy,
-        max_tokens: int,
-    ) -> list[Message]:
-        """
-        Returns optimized message list that fits within max_tokens.
-        Preserves: system_prompt (always) + tool_schemas + strategy-selected messages
-        """
-```
+**ContextWindowManager** chịu trách nhiệm tối ưu danh sách messages sao cho vừa với token budget của model.
+
+| Method | Parameters | Return Type | Description |
+|--------|-----------|-------------|-------------|
+| build | full_history: list[Message], system_prompt: str, injected_context: str hoặc None (working memory), tool_schemas: list[dict], strategy: ContextStrategy, max_tokens: int | list[Message] | Trả về danh sách messages đã tối ưu nằm trong giới hạn max_tokens. Luôn giữ system_prompt + tool_schemas, các messages còn lại được chọn theo strategy. |
 
 **Strategies:**
 
@@ -170,43 +137,26 @@ class ContextWindowManager:
 
 #### 3.2.2 Conversation Buffer
 
-```python
-class ConversationBuffer:
-    """Full history stored in Redis, not affected by context trimming."""
+**ConversationBuffer** lưu trữ toàn bộ lịch sử hội thoại trong Redis, không bị ảnh hưởng bởi context trimming.
 
-    async def append(self, session_id: str, message: Message) -> None
-    async def get_all(self, session_id: str) -> list[Message]
-    async def get_recent(self, session_id: str, n: int) -> list[Message]
-    async def get_token_count(self, session_id: str) -> int
-```
+| Method | Parameters | Return Type | Description |
+|--------|-----------|-------------|-------------|
+| append | session_id: str, message: Message | None | Thêm message vào cuối buffer. |
+| get_all | session_id: str | list[Message] | Lấy toàn bộ lịch sử hội thoại. |
+| get_recent | session_id: str, n: int | list[Message] | Lấy N messages gần nhất. |
+| get_token_count | session_id: str | int | Trả về tổng số tokens của toàn bộ lịch sử. |
 
 **Storage:** Redis — key format: `session:{session_id}:messages` (list type)
 
 #### 3.2.3 Summarizer
 
-```python
-class ConversationSummarizer:
-    async def summarize(
-        self,
-        messages: list[Message],
-        existing_summary: str | None,
-        model_config: ModelConfig,
-    ) -> str:
-        """
-        Incremental: if existing_summary provided, summarizes
-        existing_summary + new_messages → updated_summary.
+**ConversationSummarizer** tạo tóm tắt hội thoại theo phương thức incremental.
 
-        Target: summary < 500 tokens regardless of input length.
-        """
-```
+| Method | Parameters | Return Type | Description |
+|--------|-----------|-------------|-------------|
+| summarize | messages: list[Message], existing_summary: str hoặc None, model_config: ModelConfig | str | Nếu existing_summary được cung cấp, summarize existing_summary + new_messages thành updated_summary. Target: summary luôn < 500 tokens bất kể độ dài input. |
 
-**Trigger logic:**
-```
-Token count of history > 70% of context_window_budget
-    → Summarize oldest messages (keep last N)
-    → Replace old messages with summary message
-    → Continue execution
-```
+**Trigger logic:** Khi token count của lịch sử hội thoại vượt quá 70% của context_window_budget, hệ thống sẽ tự động summarize các messages cũ nhất (giữ lại N messages gần nhất), thay thế các messages cũ bằng 1 summary message, sau đó tiếp tục execution.
 
 ---
 
@@ -215,123 +165,100 @@ Token count of history > 70% of context_window_budget
 **Scope:** Per-session.
 **Store:** Redis Hash — key: `session:{session_id}:working`
 
-```python
-class WorkingMemory:
-    """Session-scoped working state, stored in Redis for fast access."""
+**WorkingMemory** lưu trữ trạng thái làm việc trong phiên (session-scoped), sử dụng Redis để truy cập nhanh.
 
-    async def get_plan(self, session_id: str) -> Plan | None
-    async def update_plan(self, session_id: str, plan: Plan) -> None
-    async def get_artifacts(self, session_id: str) -> dict
-    async def store_artifact(self, session_id: str, key: str, value: Any) -> None
-    async def get_scratchpad(self, session_id: str) -> str | None
-    async def update_scratchpad(self, session_id: str, content: str) -> None
-```
+| Method | Parameters | Return Type | Description |
+|--------|-----------|-------------|-------------|
+| get_plan | session_id: str | Plan hoặc None | Lấy plan hiện tại của session. |
+| update_plan | session_id: str, plan: Plan | None | Cập nhật plan cho session. |
+| get_artifacts | session_id: str | dict | Lấy tất cả artifacts đã tích luỹ. |
+| store_artifact | session_id: str, key: str, value: Any | None | Lưu artifact theo key. |
+| get_scratchpad | session_id: str | str hoặc None | Lấy nội dung scratchpad. |
+| update_scratchpad | session_id: str, content: str | None | Cập nhật nội dung scratchpad. |
 
 ---
 
 ### 3.4 Long-Term Memory — Stub (Phase 2)
 
-```python
-class EmbeddingService:
-    """Phase 2. Generates embeddings, abstracted from provider."""
-    async def embed(self, texts: list[str]) -> list[list[float]]: ...
-    async def embed_query(self, query: str) -> list[float]: ...
+**EmbeddingService** — Phase 2. Tạo embeddings, được trừu tượng hoá khỏi provider cụ thể.
 
-class MemorySearchEngine:
-    """Phase 2. Vector similarity search."""
-    async def search(
-        self,
-        tenant_id: str,
-        agent_id: str,
-        query: str,
-        top_k: int = 5,
-        score_threshold: float = 0.7,
-        filters: MemoryFilters | None = None,
-        namespace: str = "default",
-    ) -> list[MemorySearchResult]: ...
+| Method | Parameters | Return Type | Description |
+|--------|-----------|-------------|-------------|
+| embed | texts: list[str] | list[list[float]] | Tạo embedding vectors cho nhiều đoạn text. |
+| embed_query | query: str | list[float] | Tạo embedding vector cho 1 câu query. |
 
-class KnowledgeBaseIndexer:
-    """Phase 2. Ingest external documents into long-term memory."""
-    async def ingest(
-        self,
-        tenant_id: str,
-        agent_id: str,
-        documents: list[Document],
-        chunking_config: ChunkingConfig,
-    ) -> IngestResult: ...
-```
+**MemorySearchEngine** — Phase 2. Tìm kiếm vector similarity.
 
-**Data Model (reference cho Phase 2):**
+| Method | Parameters | Return Type | Description |
+|--------|-----------|-------------|-------------|
+| search | tenant_id: str, agent_id: str, query: str, top_k: int (default 5), score_threshold: float (default 0.7), filters: MemoryFilters hoặc None, namespace: str (default "default") | list[MemorySearchResult] | Tìm kiếm memories theo vector similarity. |
 
-```sql
-CREATE TABLE memories (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id TEXT NOT NULL,
-    agent_id TEXT NOT NULL,
-    namespace TEXT NOT NULL DEFAULT 'default',
+**KnowledgeBaseIndexer** — Phase 2. Ingest tài liệu bên ngoài vào long-term memory.
 
-    -- Content
-    content TEXT NOT NULL,
-    content_type TEXT DEFAULT 'text',      -- 'text', 'structured', 'code'
+| Method | Parameters | Return Type | Description |
+|--------|-----------|-------------|-------------|
+| ingest | tenant_id: str, agent_id: str, documents: list[Document], chunking_config: ChunkingConfig | IngestResult | Xử lý và lưu trữ tài liệu vào long-term memory. |
 
-    -- Embedding
-    embedding VECTOR(1536) NOT NULL,
+**Data Model — bảng `memories` (reference cho Phase 2):**
 
-    -- Metadata
-    metadata JSONB DEFAULT '{}',
-    source TEXT,
-    tags TEXT[] DEFAULT '{}',
+| Column | Type | Default | Description |
+|--------|------|---------|-------------|
+| id | UUID | gen_random_uuid() | Primary key |
+| tenant_id | TEXT NOT NULL | — | ID tenant sở hữu |
+| agent_id | TEXT NOT NULL | — | ID agent sở hữu |
+| namespace | TEXT NOT NULL | 'default' | Namespace để phân vùng memories |
+| content | TEXT NOT NULL | — | Nội dung memory |
+| content_type | TEXT | 'text' | Loại nội dung: 'text', 'structured', 'code' |
+| embedding | VECTOR(1536) NOT NULL | — | Vector embedding cho similarity search |
+| metadata | JSONB | '{}' | Metadata tuỳ chỉnh |
+| source | TEXT | — | Nguồn gốc nội dung |
+| tags | TEXT[] | '{}' | Danh sách tags |
+| created_at | TIMESTAMPTZ | NOW() | Thời điểm tạo |
+| updated_at | TIMESTAMPTZ | NOW() | Thời điểm cập nhật lần cuối |
+| expires_at | TIMESTAMPTZ | — | Thời điểm hết hạn (nullable) |
+| access_count | INT | 0 | Số lần truy cập |
+| last_accessed_at | TIMESTAMPTZ | — | Thời điểm truy cập lần cuối |
 
-    -- Lifecycle
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW(),
-    expires_at TIMESTAMPTZ,
-    access_count INT DEFAULT 0,
-    last_accessed_at TIMESTAMPTZ,
+**Foreign key:** tenant_id tham chiếu đến tenants(id).
 
-    -- Isolation
-    CONSTRAINT fk_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id)
-);
+**Indexes:**
 
--- HNSW index for fast approximate nearest neighbor
-CREATE INDEX idx_memories_embedding ON memories
-    USING hnsw (embedding vector_cosine_ops)
-    WITH (m = 16, ef_construction = 64);
+- **idx_memories_embedding:** HNSW index trên cột embedding sử dụng vector_cosine_ops (m = 16, ef_construction = 64) — phục vụ approximate nearest neighbor search nhanh.
+- **idx_memories_scope:** Composite index trên (tenant_id, agent_id, namespace) — phục vụ truy vấn theo scope.
 
--- Composite index for tenant + agent scoping
-CREATE INDEX idx_memories_scope ON memories (tenant_id, agent_id, namespace);
+**Row-Level Security (RLS):**
 
--- Row-level security
-ALTER TABLE memories ENABLE ROW LEVEL SECURITY;
-CREATE POLICY tenant_isolation ON memories
-    USING (tenant_id = current_setting('app.current_tenant'));
-```
+- Bật RLS trên bảng memories.
+- Policy `tenant_isolation`: chỉ cho phép truy cập rows có tenant_id khớp với current_setting('app.current_tenant').
 
 ---
 
 ### 3.5 Episodic Memory — Stub (Phase 3)
 
-```python
-@dataclass
-class Episode:
-    id: str
-    agent_id: str
-    tenant_id: str
-    task_summary: str
-    approach: str
-    outcome: str                   # "success" | "partial" | "failed"
-    lessons_learned: str
-    steps_taken: int
-    total_cost: float
-    duration_seconds: int
-    tags: list[str]
-    embedding: list[float]
-    created_at: datetime
+**Episode** — data model lưu trữ một trải nghiệm hoàn chỉnh của agent.
 
-class EpisodicMemory:
-    async def record_episode(self, session: CompletedSession) -> Episode: ...
-    async def recall(self, task_description: str, top_k: int = 3) -> list[Episode]: ...
-```
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| id | str | — | Unique identifier |
+| agent_id | str | — | ID agent sở hữu |
+| tenant_id | str | — | ID tenant sở hữu |
+| task_summary | str | — | Tóm tắt task đã thực hiện |
+| approach | str | — | Cách tiếp cận đã sử dụng |
+| outcome | str | — | Kết quả: "success", "partial", hoặc "failed" |
+| lessons_learned | str | — | Bài học rút ra |
+| steps_taken | int | — | Số bước đã thực hiện |
+| total_cost | float | — | Tổng chi phí (USD) |
+| duration_seconds | int | — | Thời gian thực thi (giây) |
+| tags | list[str] | — | Danh sách tags |
+| embedding | list[float] | — | Vector embedding cho similarity search |
+| created_at | datetime | — | Thời điểm tạo |
+
+**EpisodicMemory** — quản lý lưu trữ và truy xuất episodes.
+
+| Method | Parameters | Return Type | Description |
+|--------|-----------|-------------|-------------|
+| record_episode | session: CompletedSession | Episode | Ghi lại episode từ một session đã hoàn thành. |
+| recall | task_description: str, top_k: int (default 3) | list[Episode] | Tìm kiếm episodes tương tự với task mô tả. |
 
 ---
 
@@ -490,41 +417,47 @@ Agent A (Researcher)    Shared Memory       Agent B (Writer)
 
 ## 5. Configuration Model
 
-```python
-@dataclass
-class MemoryConfig:
-    short_term: ShortTermConfig
-    long_term: LongTermConfig
-    working: WorkingConfig
+**MemoryConfig** — cấu hình tổng thể cho Memory System, bao gồm 3 sub-config:
 
-@dataclass
-class ShortTermConfig:
-    strategy: Literal["sliding_window", "summarize_recent", "selective", "token_trim"]
-    max_context_tokens: int = 8000
-    recent_messages_to_keep: int = 20
-    summarization_threshold: float = 0.7
-    summarization_model: str = "claude-haiku-4-5-20251001"
+| Field | Type | Description |
+|-------|------|-------------|
+| short_term | ShortTermConfig | Cấu hình short-term memory |
+| long_term | LongTermConfig | Cấu hình long-term memory |
+| working | WorkingConfig | Cấu hình working memory |
 
-@dataclass
-class LongTermConfig:
-    enabled: bool = False                       # Disabled in Phase 1
-    auto_retrieve: bool = True
-    top_k: int = 5
-    score_threshold: float = 0.7
-    embedding_provider: str = "openai"
-    embedding_model: str = "text-embedding-3-small"
-    embedding_dimensions: int = 1536
-    max_memories: int = 100_000
-    chunking_strategy: str = "recursive"
-    chunk_size: int = 512
-    chunk_overlap: int = 50
+**ShortTermConfig:**
 
-@dataclass
-class WorkingConfig:
-    scratchpad_enabled: bool = True
-    max_artifacts: int = 50
-    max_artifact_size_bytes: int = 1_048_576    # 1MB
-```
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| strategy | Literal["sliding_window", "summarize_recent", "selective", "token_trim"] | — | Chiến lược quản lý context window |
+| max_context_tokens | int | 8000 | Số token tối đa cho context window |
+| recent_messages_to_keep | int | 20 | Số messages gần nhất luôn được giữ lại |
+| summarization_threshold | float | 0.7 | Ngưỡng % token budget kích hoạt summarization |
+| summarization_model | str | "claude-haiku-4-5-20251001" | Model sử dụng cho summarization |
+
+**LongTermConfig:**
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| enabled | bool | False | Disabled trong Phase 1 |
+| auto_retrieve | bool | True | Tự động truy xuất long-term memory khi build context |
+| top_k | int | 5 | Số kết quả trả về khi search |
+| score_threshold | float | 0.7 | Ngưỡng similarity score tối thiểu |
+| embedding_provider | str | "openai" | Provider cho embedding |
+| embedding_model | str | "text-embedding-3-small" | Model embedding |
+| embedding_dimensions | int | 1536 | Số chiều của embedding vector |
+| max_memories | int | 100_000 | Số memories tối đa cho mỗi agent |
+| chunking_strategy | str | "recursive" | Chiến lược chia nhỏ tài liệu |
+| chunk_size | int | 512 | Kích thước mỗi chunk (tokens) |
+| chunk_overlap | int | 50 | Số tokens overlap giữa các chunks |
+
+**WorkingConfig:**
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| scratchpad_enabled | bool | True | Bật/tắt scratchpad |
+| max_artifacts | int | 50 | Số artifacts tối đa mỗi session |
+| max_artifact_size_bytes | int | 1_048_576 | Kích thước tối đa mỗi artifact (1MB) |
 
 ---
 
@@ -580,11 +513,12 @@ class WorkingConfig:
 | **Episodic** (Phase 3) | Indefinite | Capacity-based eviction (keep top-N episodes) |
 | **Shared** (Phase 2) | Multi-agent session duration | Auto-delete khi session end |
 
-```python
-class MemoryCleanupPolicy:
-    max_memories_per_agent: int = 100_000
-    eviction_strategy: str = "lru"          # "lru", "oldest", "lowest_score"
-    min_access_count: int = 0
-    max_age_days: int | None = None
-    archive_before_delete: bool = True
-```
+**MemoryCleanupPolicy** — cấu hình chính sách dọn dẹp long-term memory:
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| max_memories_per_agent | int | 100_000 | Số memories tối đa cho mỗi agent |
+| eviction_strategy | str | "lru" | Chiến lược eviction: "lru", "oldest", "lowest_score" |
+| min_access_count | int | 0 | Số lần truy cập tối thiểu để không bị evict |
+| max_age_days | int hoặc None | None | Tuổi tối đa (ngày) — None nghĩa là không giới hạn |
+| archive_before_delete | bool | True | Lưu trữ (archive) trước khi xoá |

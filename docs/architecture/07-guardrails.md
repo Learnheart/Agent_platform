@@ -74,20 +74,19 @@ Soft guardrails: có thể depend external service hoặc model inference, chấ
 
 ### Circuit Breaker cho Soft Guardrails
 
-```python
-class GuardrailCircuitBreaker:
-    """Circuit breaker for soft guardrails.
-    States: CLOSED (normal) → OPEN (bypassing) → HALF_OPEN (testing)"""
+**GuardrailCircuitBreaker** — Circuit breaker cho soft guardrails, quản lý ba trạng thái: CLOSED (hoạt động bình thường) → OPEN (bypass guardrail) → HALF_OPEN (thử nghiệm phục hồi).
 
-    failure_threshold: int = 5          # consecutive failures to open
-    recovery_timeout_seconds: int = 60  # time in OPEN before trying HALF_OPEN
-    half_open_max_calls: int = 3        # calls to test in HALF_OPEN
+**Thuộc tính cấu hình:**
 
-    async def execute(self, check_fn: Callable, fallback: GuardrailResult) -> GuardrailResult:
-        """If CLOSED: run check_fn normally.
-        If OPEN: return fallback (allow + log).
-        If HALF_OPEN: run check_fn, track success/failure."""
-```
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| failure_threshold | int | 5 | Số lần thất bại liên tiếp để chuyển sang OPEN |
+| recovery_timeout_seconds | int | 60 | Thời gian ở trạng thái OPEN trước khi thử HALF_OPEN |
+| half_open_max_calls | int | 3 | Số lần gọi thử nghiệm trong trạng thái HALF_OPEN |
+
+**Phương thức:**
+
+- **execute(check_fn: Callable, fallback: GuardrailResult) -> GuardrailResult** (async): Nếu CLOSED, chạy check_fn bình thường. Nếu OPEN, trả về fallback (cho phép + ghi log). Nếu HALF_OPEN, chạy check_fn và theo dõi thành công/thất bại.
 
 ---
 
@@ -104,14 +103,9 @@ class GuardrailCircuitBreaker:
 | Character encoding | UTF-8 hợp lệ, không có control characters nguy hiểm |
 | Attachment validation | File type, size trong allowlist |
 
-```python
-class SchemaValidator:
-    async def validate(self, input: AgentInput, agent_config: AgentConfig) -> ValidationResult:
-        """
-        Returns: ValidationResult(passed=bool, violations=list[Violation])
-        Nếu failed → return 400 Bad Request, không gọi LLM
-        """
-```
+**SchemaValidator** — Lớp thực hiện kiểm tra tính hợp lệ của input đầu vào.
+
+- **validate(input: AgentInput, agent_config: AgentConfig) -> ValidationResult** (async): Trả về ValidationResult với trường passed (bool) và violations (list[Violation]). Nếu validation thất bại, trả về 400 Bad Request và không gọi LLM.
 
 #### 2.1.2 Content Filter — Soft Guardrail (Phase 2)
 
@@ -121,14 +115,9 @@ class SchemaValidator:
 | **Warn** | Cho qua nhưng log warning + emit event |
 | **Redact** | Xóa/thay thế phần vi phạm, tiếp tục xử lý |
 
-```python
-class ContentFilter:
-    async def check(self, content: str, policy: ContentPolicy) -> FilterResult:
-        """
-        policy.blocked_categories: ["hate_speech", "self_harm", "explicit"]
-        policy.mode: "block" | "warn" | "redact"
-        """
-```
+**ContentFilter** — Lớp lọc nội dung dựa trên chính sách.
+
+- **check(content: str, policy: ContentPolicy) -> FilterResult** (async): Nhận nội dung và chính sách lọc. Chính sách bao gồm blocked_categories (danh sách như "hate_speech", "self_harm", "explicit") và mode ("block", "warn", hoặc "redact").
 
 #### 2.1.3 Prompt Injection Detector — Soft Guardrail + Circuit Breaker
 
@@ -139,28 +128,20 @@ class ContentFilter:
 | **Classifier model** | Cao | Cao | **2** |
 | **Canary tokens** | Rất cao | N/A (detection) | **2** |
 
-```python
-class InjectionDetector:
-    async def detect(self, user_input: str, system_prompt: str) -> DetectionResult:
-        """
-        Returns: DetectionResult(
-            is_injection: bool,
-            confidence: float,        # 0.0 - 1.0
-            strategy_triggered: str,  # which detection layer caught it
-            details: str
-        )
+**InjectionDetector** — Lớp phát hiện prompt injection.
 
-        Phase 1 (heuristic + delimiter only):
-          Match found → BLOCK (reject immediately)
-          No match → PASS
+- **detect(user_input: str, system_prompt: str) -> DetectionResult** (async): Trả về DetectionResult bao gồm các trường: is_injection (bool), confidence (float, 0.0 - 1.0), strategy_triggered (str — cho biết detection layer nào đã phát hiện), và details (str).
 
-        Phase 2 (+ classifier + canary):
-          >= 0.9 → BLOCK (reject immediately)
-          >= 0.7 → ESCALATE (log + human review queue)
-          >= 0.5 → WARN (log warning, proceed with extra monitoring)
-          <  0.5 → PASS
-        """
-```
+**Ngưỡng xử lý Phase 1** (chỉ heuristic + delimiter): Match found thì BLOCK (reject ngay), No match thì PASS.
+
+**Ngưỡng xử lý Phase 2** (thêm classifier + canary):
+
+| Confidence | Hành động |
+|------------|-----------|
+| >= 0.9 | BLOCK — reject ngay lập tức |
+| >= 0.7 | ESCALATE — log + đưa vào hàng đợi human review |
+| >= 0.5 | WARN — log warning, tiếp tục xử lý với extra monitoring |
+| < 0.5 | PASS |
 
 ---
 
@@ -177,44 +158,38 @@ class InjectionDetector:
 └─────────────────────────────────────────────┘
 ```
 
-```python
-@dataclass
-class ToolPermission:
-    tool_pattern: str          # "mcp:database:*", "mcp:github:create_issue"
-    actions: list[str]         # ["invoke"], ["invoke", "configure"]
-    constraints: PermissionConstraints
+**ToolPermission** — Data model mô tả quyền truy cập tool.
 
-@dataclass
-class PermissionConstraints:
-    max_calls_per_session: int | None     # None = unlimited
-    max_calls_per_minute: int | None
-    max_cost_per_call: float | None       # USD
-    requires_approval: bool               # HITL gate
-    allowed_parameters: dict | None       # JSONSchema subset of allowed params
-    denied_parameters: dict | None        # JSONSchema of explicitly denied params
-    time_window: str | None               # "business_hours_only"
-```
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| tool_pattern | str | (bắt buộc) | Pattern để match tool, ví dụ "mcp:database:*", "mcp:github:create_issue" |
+| actions | list[str] | (bắt buộc) | Danh sách hành động được phép, ví dụ ["invoke"], ["invoke", "configure"] |
+| constraints | PermissionConstraints | (bắt buộc) | Các ràng buộc chi tiết cho quyền |
 
-```python
-class ToolPermissionEnforcer:
-    async def check(
-        self,
-        tool_call: ToolCall,
-        agent_permissions: list[ToolPermission],
-        session_context: SessionContext,
-    ) -> PermissionResult:
-        """
-        Returns: ALLOW | DENY(reason) | REQUIRE_APPROVAL(approver)
+**PermissionConstraints** — Data model mô tả các ràng buộc cho quyền tool.
 
-        Evaluation order:
-        1. Is tool in agent's allowed tool list? → DENY if not
-        2. Are parameters within allowed constraints? → DENY if not
-        3. Is rate limit exceeded? → DENY if yes
-        4. Is cost limit exceeded? → DENY if yes
-        5. Does this tool require HITL approval? → REQUIRE_APPROVAL if yes
-        6. → ALLOW
-        """
-```
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| max_calls_per_session | int hoặc None | None | Số lần gọi tối đa mỗi session. None = không giới hạn |
+| max_calls_per_minute | int hoặc None | None | Số lần gọi tối đa mỗi phút |
+| max_cost_per_call | float hoặc None | None | Chi phí tối đa cho mỗi lần gọi (USD) |
+| requires_approval | bool | (bắt buộc) | Có yêu cầu HITL gate hay không |
+| allowed_parameters | dict hoặc None | None | JSONSchema subset mô tả các tham số được phép |
+| denied_parameters | dict hoặc None | None | JSONSchema mô tả các tham số bị cấm rõ ràng |
+| time_window | str hoặc None | None | Cửa sổ thời gian, ví dụ "business_hours_only" |
+
+**ToolPermissionEnforcer** — Lớp kiểm tra quyền truy cập tool.
+
+- **check(tool_call: ToolCall, agent_permissions: list[ToolPermission], session_context: SessionContext) -> PermissionResult** (async): Trả về ALLOW, DENY(reason), hoặc REQUIRE_APPROVAL(approver).
+
+**Thứ tự đánh giá:**
+
+1. Tool có nằm trong danh sách allowed tools của agent không? → DENY nếu không
+2. Các tham số có nằm trong allowed constraints không? → DENY nếu không
+3. Rate limit có bị vượt quá không? → DENY nếu có
+4. Cost limit có bị vượt quá không? → DENY nếu có
+5. Tool này có yêu cầu HITL approval không? → REQUIRE_APPROVAL nếu có
+6. → ALLOW
 
 #### 2.2.2 Budget Enforcer — Hard Guardrail (Phase 1)
 
@@ -225,26 +200,11 @@ class ToolPermissionEnforcer:
 | **Step budget** | Per-session | Number of reasoning steps < max_steps |
 | **Time budget** | Per-session | Wall-clock duration < max_duration |
 
-```python
-class BudgetEnforcer:
-    async def check(self, session: Session, next_action: Action) -> BudgetResult:
-        """
-        Before each LLM call or tool execution:
-        1. Calculate current usage (tokens, cost, steps, time)
-        2. Estimate next action cost
-        3. If current + estimated > budget:
-           - If >= 90% budget: inject "wrap up" instruction to LLM
-           - If >= 100% budget: DENY, force graceful termination
-        """
+**BudgetEnforcer** — Lớp kiểm soát ngân sách sử dụng.
 
-    async def estimate_cost(self, action: Action) -> CostEstimate:
-        """
-        Estimate tokens for next LLM call based on:
-        - Current context length
-        - Average completion length for this agent
-        - Tool execution cost (if applicable)
-        """
-```
+- **check(session: Session, next_action: Action) -> BudgetResult** (async): Trước mỗi lần gọi LLM hoặc thực thi tool, thực hiện: (1) Tính toán mức sử dụng hiện tại (tokens, cost, steps, time); (2) Ước lượng chi phí hành động tiếp theo; (3) Nếu current + estimated > budget: inject "wrap up" instruction khi >= 90%, DENY và buộc kết thúc khi >= 100%.
+
+- **estimate_cost(action: Action) -> CostEstimate** (async): Ước tính tokens cho lần gọi LLM tiếp theo dựa trên: context length hiện tại, độ dài completion trung bình cho agent này, và chi phí thực thi tool (nếu có).
 
 ```
 Budget at 80%  → Log warning
@@ -266,78 +226,46 @@ Token bucket algorithm trên Redis.
 
 #### 2.2.4 Human-in-the-Loop (HITL) Gate — Configurable (Phase 1)
 
-```python
-class HITLGate:
-    async def request_approval(
-        self,
-        session_id: str,
-        action: ToolCall,
-        reason: str,
-        timeout_seconds: int = 3600,
-    ) -> ApprovalResult:
-        """
-        1. Set session state → WAITING_INPUT
-        2. Emit approval_requested event (via WebSocket + webhook)
-        3. Store pending approval in DB
-        4. Wait for human response (approve/reject/modify) or timeout
-        5. Return result → executor continues or aborts
-        """
-```
+**HITLGate** — Lớp quản lý quy trình phê duyệt từ con người.
 
-**Approval payload:**
+- **request_approval(session_id: str, action: ToolCall, reason: str, timeout_seconds: int = 3600) -> ApprovalResult** (async): Thực hiện các bước: (1) Set session state sang WAITING_INPUT; (2) Emit approval_requested event qua WebSocket + webhook; (3) Lưu pending approval vào DB; (4) Chờ human response (approve/reject/modify) hoặc timeout; (5) Trả về result để executor tiếp tục hoặc hủy.
 
-```json
-{
-  "approval_id": "uuid",
-  "session_id": "uuid",
-  "agent_name": "customer-support-v2",
-  "action": {
-    "tool": "mcp:database:execute_query",
-    "parameters": { "query": "UPDATE users SET status='active' WHERE id=123" }
-  },
-  "reason": "Tool 'execute_query' requires approval for write operations",
-  "context_summary": "Agent đang xử lý yêu cầu kích hoạt tài khoản user #123",
-  "options": ["approve", "reject", "modify"],
-  "expires_at": "2026-03-25T15:30:00Z"
-}
-```
+**Approval payload:** Cấu trúc dữ liệu gửi đến người phê duyệt:
+
+| Field | Type | Description |
+|-------|------|-------------|
+| approval_id | string (uuid) | ID duy nhất cho yêu cầu phê duyệt |
+| session_id | string (uuid) | ID session liên quan |
+| agent_name | string | Tên agent, ví dụ "customer-support-v2" |
+| action.tool | string | Tên tool cần phê duyệt, ví dụ "mcp:database:execute_query" |
+| action.parameters | object | Tham số của tool call, ví dụ { "query": "UPDATE users SET status='active' WHERE id=123" } |
+| reason | string | Lý do cần phê duyệt, ví dụ "Tool 'execute_query' requires approval for write operations" |
+| context_summary | string | Tóm tắt ngữ cảnh, ví dụ "Agent đang xử lý yêu cầu kích hoạt tài khoản user #123" |
+| options | list[string] | Các lựa chọn: ["approve", "reject", "modify"] |
+| expires_at | string (ISO 8601) | Thời điểm hết hạn, ví dụ "2026-03-25T15:30:00Z" |
 
 #### 2.2.5 Custom Rule Engine — Soft Guardrail (Phase 2)
 
-```python
-@dataclass
-class GuardrailRule:
-    id: str
-    name: str
-    description: str
-    trigger: str              # "before_llm_call" | "before_tool_call" | "after_llm_call"
-    condition: str            # CEL expression (Common Expression Language)
-    action: str               # "block" | "warn" | "require_approval" | "modify"
-    priority: int             # Lower = evaluated first
-    enabled: bool
+**GuardrailRule** — Data model mô tả một rule tùy chỉnh.
 
-# Example rules:
-rules = [
-    GuardrailRule(
-        name="no_delete_in_prod",
-        trigger="before_tool_call",
-        condition='tool.name == "database:execute" && input.query.contains("DELETE") && env == "production"',
-        action="block",
-    ),
-    GuardrailRule(
-        name="large_data_approval",
-        trigger="before_tool_call",
-        condition='tool.name == "database:execute" && estimated_rows > 10000',
-        action="require_approval",
-    ),
-    GuardrailRule(
-        name="notify_on_external_api",
-        trigger="before_tool_call",
-        condition='tool.namespace.startsWith("mcp:external")',
-        action="warn",
-    ),
-]
-```
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| id | str | (bắt buộc) | ID duy nhất của rule |
+| name | str | (bắt buộc) | Tên rule |
+| description | str | (bắt buộc) | Mô tả rule |
+| trigger | str | (bắt buộc) | Thời điểm kích hoạt: "before_llm_call", "before_tool_call", hoặc "after_llm_call" |
+| condition | str | (bắt buộc) | Biểu thức CEL (Common Expression Language) |
+| action | str | (bắt buộc) | Hành động khi match: "block", "warn", "require_approval", hoặc "modify" |
+| priority | int | (bắt buộc) | Độ ưu tiên, số thấp hơn được đánh giá trước |
+| enabled | bool | (bắt buộc) | Rule có đang bật hay không |
+
+**Ví dụ các rules:**
+
+| Rule Name | Trigger | Condition (CEL) | Action |
+|-----------|---------|-----------------|--------|
+| no_delete_in_prod | before_tool_call | tool.name == "database:execute" AND input.query chứa "DELETE" AND env == "production" | block |
+| large_data_approval | before_tool_call | tool.name == "database:execute" AND estimated_rows > 10000 | require_approval |
+| notify_on_external_api | before_tool_call | tool.namespace bắt đầu bằng "mcp:external" | warn |
 
 ---
 
@@ -363,60 +291,38 @@ rules = [
 | Name (optional) | NER model | `[PERSON]` |
 | Address (optional) | NER model | `[ADDRESS]` |
 
-```python
-class PIIDetector:
-    async def scan_and_mask(
-        self,
-        text: str,
-        policy: PIIPolicy,
-    ) -> PIIScanResult:
-        """
-        policy.mode: "detect_only" | "mask_in_response" | "mask_in_logs" | "mask_all"
-        policy.types: ["email", "phone", "ssn", "credit_card"]
+**PIIDetector** — Lớp phát hiện và che giấu thông tin cá nhân (PII).
 
-        Returns: PIIScanResult(
-            original_text: str,
-            masked_text: str,
-            detections: list[PIIDetection(type, span, confidence)]
-        )
-        """
-```
+- **scan_and_mask(text: str, policy: PIIPolicy) -> PIIScanResult** (async): Nhận văn bản và chính sách PII. Chính sách bao gồm mode ("detect_only", "mask_in_response", "mask_in_logs", hoặc "mask_all") và types (danh sách loại PII cần phát hiện, ví dụ ["email", "phone", "ssn", "credit_card"]). Trả về PIIScanResult gồm: original_text (str), masked_text (str), và detections (list[PIIDetection] — mỗi detection gồm type, span, confidence).
 
 #### 2.3.3 Canary Monitor — Soft Guardrail (Phase 2)
 
-```python
-class CanaryMonitor:
-    def inject_canary(self, system_prompt: str, session_id: str) -> tuple[str, str]:
-        """Returns (modified_prompt, canary_token)"""
-        canary = generate_unique_token(session_id)
-        marker = f"[SYSTEM_INTEGRITY_TOKEN: {canary}]"
-        return system_prompt + f"\n{marker}", canary
+**CanaryMonitor** — Lớp giám sát canary tokens để phát hiện rò rỉ system prompt.
 
-    def check_output(self, output: str, canary_token: str) -> bool:
-        """Returns True if canary is leaked in output → ALERT"""
-        return canary_token in output
-```
+- **inject_canary(system_prompt: str, session_id: str) -> tuple[str, str]**: Tạo canary token duy nhất từ session_id, thêm marker dạng "[SYSTEM_INTEGRITY_TOKEN: {canary}]" vào cuối system prompt. Trả về tuple gồm (modified_prompt, canary_token).
+
+- **check_output(output: str, canary_token: str) -> bool**: Kiểm tra output có chứa canary token không. Trả về True nếu canary bị rò rỉ trong output, khi đó cần phát ALERT.
 
 ---
 
 ### 2.4 Audit Trail
 
-```python
-@dataclass
-class GuardrailAuditEntry:
-    id: str
-    timestamp: datetime
-    session_id: str
-    tenant_id: str
-    agent_id: str
-    step_index: int
-    check_type: str          # "schema_validation", "injection_detection", "tool_permission", etc.
-    check_name: str
-    result: str              # "pass" | "fail" | "warn" | "require_approval"
-    details: dict
-    action_taken: str        # "allowed" | "blocked" | "masked" | "escalated"
-    latency_ms: float
-```
+**GuardrailAuditEntry** — Data model cho mỗi bản ghi kiểm toán guardrail.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| id | str | (bắt buộc) | ID duy nhất của bản ghi |
+| timestamp | datetime | (bắt buộc) | Thời điểm kiểm tra |
+| session_id | str | (bắt buộc) | ID session liên quan |
+| tenant_id | str | (bắt buộc) | ID tenant |
+| agent_id | str | (bắt buộc) | ID agent |
+| step_index | int | (bắt buộc) | Chỉ số bước trong session |
+| check_type | str | (bắt buộc) | Loại kiểm tra, ví dụ "schema_validation", "injection_detection", "tool_permission", v.v. |
+| check_name | str | (bắt buộc) | Tên cụ thể của bước kiểm tra |
+| result | str | (bắt buộc) | Kết quả: "pass", "fail", "warn", hoặc "require_approval" |
+| details | dict | (bắt buộc) | Chi tiết bổ sung |
+| action_taken | str | (bắt buộc) | Hành động đã thực hiện: "allowed", "blocked", "masked", hoặc "escalated" |
+| latency_ms | float | (bắt buộc) | Thời gian xử lý (mili-giây) |
 
 PostgreSQL append-only table (no UPDATE/DELETE allowed).
 
@@ -559,66 +465,82 @@ LLM GW          Executor         Guardrails Engine                    Client
 
 ### 4.1 Agent-Level Guardrails Config
 
-```python
-@dataclass
-class GuardrailsConfig:
-    # Inbound
-    input_validation: InputValidationConfig
-    content_filtering: ContentFilterConfig
-    injection_detection: InjectionDetectionConfig
+**GuardrailsConfig** — Cấu hình guardrails cấp agent, bao gồm ba nhóm:
 
-    # Policy
-    tool_permissions: list[ToolPermission]
-    budget: BudgetConfig
-    rate_limits: RateLimitConfig
-    hitl_rules: list[HITLRule]
-    custom_rules: list[GuardrailRule]
+**Inbound:**
 
-    # Outbound
-    output_filtering: OutputFilterConfig
-    pii_detection: PIIConfig
-    canary_enabled: bool
+| Field | Type | Description |
+|-------|------|-------------|
+| input_validation | InputValidationConfig | Cấu hình validation đầu vào |
+| content_filtering | ContentFilterConfig | Cấu hình lọc nội dung |
+| injection_detection | InjectionDetectionConfig | Cấu hình phát hiện injection |
 
-@dataclass
-class BudgetConfig:
-    max_tokens_per_session: int = 50_000
-    max_cost_per_session_usd: float = 5.0
-    max_steps_per_session: int = 50
-    max_duration_seconds: int = 600
-    warning_threshold: float = 0.8      # 80% → inject warning
-    critical_threshold: float = 0.95    # 95% → force wrap-up
+**Policy:**
 
-@dataclass
-class InjectionDetectionConfig:
-    enabled: bool = True
-    strategies: list[str] = ["heuristic", "classifier"]
-    block_threshold: float = 0.9
-    escalate_threshold: float = 0.7
-    warn_threshold: float = 0.5
-    classifier_model: str = "guardrail-injection-v1"  # internal model ID
-```
+| Field | Type | Description |
+|-------|------|-------------|
+| tool_permissions | list[ToolPermission] | Danh sách quyền truy cập tool |
+| budget | BudgetConfig | Cấu hình ngân sách |
+| rate_limits | RateLimitConfig | Cấu hình giới hạn tốc độ |
+| hitl_rules | list[HITLRule] | Danh sách rule HITL |
+| custom_rules | list[GuardrailRule] | Danh sách rule tùy chỉnh |
+
+**Outbound:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| output_filtering | OutputFilterConfig | Cấu hình lọc output |
+| pii_detection | PIIConfig | Cấu hình phát hiện PII |
+| canary_enabled | bool | Bật/tắt canary monitoring |
+
+**BudgetConfig** — Cấu hình ngân sách cho session.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| max_tokens_per_session | int | 50,000 | Số token tối đa mỗi session |
+| max_cost_per_session_usd | float | 5.0 | Chi phí tối đa mỗi session (USD) |
+| max_steps_per_session | int | 50 | Số bước tối đa mỗi session |
+| max_duration_seconds | int | 600 | Thời lượng tối đa mỗi session (giây) |
+| warning_threshold | float | 0.8 | Ngưỡng 80% để inject warning |
+| critical_threshold | float | 0.95 | Ngưỡng 95% để buộc kết thúc |
+
+**InjectionDetectionConfig** — Cấu hình phát hiện prompt injection.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| enabled | bool | True | Bật/tắt phát hiện injection |
+| strategies | list[str] | ["heuristic", "classifier"] | Các chiến lược phát hiện |
+| block_threshold | float | 0.9 | Ngưỡng confidence để block |
+| escalate_threshold | float | 0.7 | Ngưỡng confidence để escalate |
+| warn_threshold | float | 0.5 | Ngưỡng confidence để warn |
+| classifier_model | str | "guardrail-injection-v1" | ID model nội bộ dùng để classify |
 
 ### 4.2 Example Agent Definition with Guardrails
 
-```json
-{
-  "agent_id": "customer-support-v2",
-  "guardrails": {
-    "input_validation": { "max_message_length": 4000, "allowed_content_types": ["text"] },
-    "content_filtering": { "mode": "block", "categories": ["hate_speech", "self_harm"] },
-    "injection_detection": { "enabled": true, "block_threshold": 0.85 },
-    "tool_permissions": [
-      { "tool_pattern": "mcp:crm:read_*", "actions": ["invoke"] },
-      { "tool_pattern": "mcp:crm:update_*", "actions": ["invoke"], "constraints": { "requires_approval": false } },
-      { "tool_pattern": "mcp:crm:delete_*", "actions": ["invoke"], "constraints": { "requires_approval": true } },
-      { "tool_pattern": "mcp:email:send", "actions": ["invoke"], "constraints": { "max_calls_per_session": 3 } }
-    ],
-    "budget": { "max_tokens_per_session": 30000, "max_cost_per_session_usd": 2.0, "max_steps": 20 },
-    "pii_detection": { "mode": "mask_in_logs", "types": ["email", "phone", "ssn"] },
-    "canary_enabled": true
-  }
-}
-```
+Ví dụ cấu hình guardrails cho agent "customer-support-v2":
+
+**Thông tin chung:** agent_id = "customer-support-v2"
+
+**Input validation:** max_message_length = 4000, allowed_content_types = ["text"]
+
+**Content filtering:** mode = "block", categories = ["hate_speech", "self_harm"]
+
+**Injection detection:** enabled = true, block_threshold = 0.85
+
+**Tool permissions:**
+
+| Tool Pattern | Actions | Constraints |
+|-------------|---------|-------------|
+| mcp:crm:read_* | ["invoke"] | (không có ràng buộc thêm) |
+| mcp:crm:update_* | ["invoke"] | requires_approval = false |
+| mcp:crm:delete_* | ["invoke"] | requires_approval = true |
+| mcp:email:send | ["invoke"] | max_calls_per_session = 3 |
+
+**Budget:** max_tokens_per_session = 30000, max_cost_per_session_usd = 2.0, max_steps = 20
+
+**PII detection:** mode = "mask_in_logs", types = ["email", "phone", "ssn"]
+
+**Canary:** canary_enabled = true
 
 ---
 

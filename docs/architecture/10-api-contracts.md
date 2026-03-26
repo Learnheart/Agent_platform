@@ -22,33 +22,25 @@ https://{host}/api/v1/{resource}
 
 Tất cả responses (trừ SSE stream) sử dụng envelope chuẩn:
 
-**Success:**
-```json
-{
-  "data": { ... },
-  "meta": {
-    "request_id": "req_abc123",
-    "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
-    "timestamp": "2026-03-26T10:30:00Z"
-  }
-}
-```
+**Success Response:**
 
-**Error:**
-```json
-{
-  "error": {
-    "code": "AGENT_NOT_FOUND",
-    "message": "Agent with ID 'xyz' not found",
-    "details": {}
-  },
-  "meta": {
-    "request_id": "req_abc123",
-    "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
-    "timestamp": "2026-03-26T10:30:00Z"
-  }
-}
-```
+| Field | Type | Mô tả |
+|-------|------|--------|
+| `data` | object | Dữ liệu trả về |
+| `meta.request_id` | string | ID request, ví dụ `req_abc123` |
+| `meta.trace_id` | string | OpenTelemetry trace ID |
+| `meta.timestamp` | string (ISO 8601) | Thời điểm response |
+
+**Error Response:**
+
+| Field | Type | Mô tả |
+|-------|------|--------|
+| `error.code` | string | Machine-readable error code, ví dụ `AGENT_NOT_FOUND` |
+| `error.message` | string | Human-readable message, ví dụ `Agent with ID 'xyz' not found` |
+| `error.details` | object | Structured context bổ sung (optional) |
+| `meta.request_id` | string | ID request |
+| `meta.trace_id` | string | OpenTelemetry trace ID |
+| `meta.timestamp` | string (ISO 8601) | Thời điểm response |
 
 ### 1.3 Pagination
 
@@ -58,18 +50,15 @@ List endpoints sử dụng cursor-based pagination:
 GET /api/v1/sessions?limit=20&cursor=eyJjcmVhdGVkX2F0IjoiMjAyNi0wMy0yNiJ9
 ```
 
-**Response:**
-```json
-{
-  "data": [ ... ],
-  "pagination": {
-    "limit": 20,
-    "has_more": true,
-    "next_cursor": "eyJjcmVhdGVkX2F0IjoiMjAyNi0wMy0yNSJ9"
-  },
-  "meta": { ... }
-}
-```
+**Response bao gồm pagination object:**
+
+| Field | Type | Mô tả |
+|-------|------|--------|
+| `data` | array | Danh sách items |
+| `pagination.limit` | int | Số items trả về (ví dụ 20) |
+| `pagination.has_more` | boolean | Còn data tiếp theo hay không |
+| `pagination.next_cursor` | string / null | Cursor cho page tiếp theo |
+| `meta` | object | Request metadata |
 
 ### 1.4 Filtering & Sorting
 
@@ -122,231 +111,117 @@ GET /api/v1/sessions?agent_id=abc&state=running&sort=-created_at
 
 ### 2.3 Auth Middleware Implementation
 
-```python
-class AuthMiddleware(BaseHTTPMiddleware):
-    """
-    Authenticates every request and attaches identity to request.state.
+**AuthMiddleware** (kế thừa BaseHTTPMiddleware) xác thực mọi request và gắn identity vào `request.state`.
 
-    Execution order:
-    1. Extract credentials from Authorization header
-    2. Determine auth method: Bearer (Builder) or X-API-Key (End User)
-    3. Validate credentials
-    4. Attach AuthContext to request.state
-    5. Pass to next middleware (TenantMiddleware)
+**Execution order:**
 
-    Skip: /health, /ready, /docs, /openapi.json
-    """
+1. Extract credentials từ `Authorization` header
+2. Xác định auth method: `Bearer` (Builder) hoặc `X-API-Key` (End User)
+3. Validate credentials
+4. Gắn `AuthContext` vào `request.state`
+5. Pass request cho middleware tiếp theo (`TenantMiddleware`)
 
-    SKIP_PATHS = {"/health", "/ready", "/docs", "/openapi.json"}
+**Skip paths:** `/health`, `/ready`, `/docs`, `/openapi.json` — các path này không yêu cầu authentication.
 
-    async def dispatch(self, request: Request, call_next):
-        if request.url.path in self.SKIP_PATHS:
-            return await call_next(request)
+**Logic xử lý:**
 
-        auth_header = request.headers.get("Authorization", "")
+- Nếu header bắt đầu bằng `Bearer `: xử lý như Builder JWT authentication — gọi `_validate_jwt(token)`.
+- Nếu header bắt đầu bằng `X-API-Key `: xử lý như End User API key authentication — gọi `_validate_api_key(api_key)`.
+- Nếu không khớp: trả về `AuthError("Missing or invalid Authorization header")`.
+- Khi xảy ra `AuthError`: trả về `JSONResponse` với `status_code` và error body chứa `code` + `message`.
 
-        try:
-            if auth_header.startswith("Bearer "):
-                # Builder: JWT (OAuth 2.0)
-                token = auth_header[7:]
-                auth_context = await self._validate_jwt(token)
+**JWT Validation (Builder authentication) — `_validate_jwt`:**
 
-            elif auth_header.startswith("X-API-Key "):
-                # End User: scoped API key
-                api_key = auth_header[10:]
-                auth_context = await self._validate_api_key(api_key)
+1. Decode JWT sử dụng configured secret/JWKS
+2. Verify: expiry, issuer, audience
+3. Extract claims: `sub` (user_id), `tenant_id`, `roles`
+4. Return `AuthContext`
 
-            else:
-                raise AuthError("Missing or invalid Authorization header")
+JWT token payload chứa các claims:
 
-            request.state.auth = auth_context
-            return await call_next(request)
+| Claim | Mô tả | Ví dụ |
+|-------|--------|-------|
+| `sub` | User ID | `user_abc123` |
+| `tenant_id` | Tenant scope | `tenant_xyz` |
+| `roles` | RBAC roles | `["admin", "builder"]` |
+| `iat` | Issued at (Unix timestamp) | `1711440000` |
+| `exp` | Expiry (Unix timestamp) | `1711443600` |
+| `iss` | Issuer | `agent-platform` |
+| `aud` | Audience | `agent-platform` |
 
-        except AuthError as e:
-            return JSONResponse(
-                status_code=e.status_code,
-                content={"error": {"code": e.code, "message": str(e)}},
-            )
+Decode sử dụng `jwt.decode()` với `jwt_secret`, `jwt_algorithm`, `jwt_issuer`, `jwt_audience` từ settings. Nếu `ExpiredSignatureError` → raise `AuthError("Token expired", 401)`. Nếu `JWTError` → raise `AuthError("Invalid token", 401)`.
 
-    async def _validate_jwt(self, token: str) -> AuthContext:
-        """
-        Validate JWT token (Builder authentication).
+Kết quả: trả về `AuthContext` với `user_id=payload["sub"]`, `tenant_id=payload["tenant_id"]`, `user_type="builder"`, `roles=payload.get("roles", [])`.
 
-        1. Decode JWT using configured secret/JWKS
-        2. Verify: expiry, issuer, audience
-        3. Extract claims: sub (user_id), tenant_id, roles
-        4. Return AuthContext
+**API Key Validation (End User authentication) — `_validate_api_key`:**
 
-        Token payload:
-        {
-            "sub": "user_abc123",           # user ID
-            "tenant_id": "tenant_xyz",      # tenant scope
-            "roles": ["admin", "builder"],  # RBAC roles
-            "iat": 1711440000,
-            "exp": 1711443600,
-            "iss": "agent-platform",
-            "aud": "agent-platform"
-        }
-        """
-        try:
-            payload = jwt.decode(
-                token,
-                self._settings.jwt_secret,
-                algorithms=[self._settings.jwt_algorithm],
-                issuer=self._settings.jwt_issuer,
-                audience=self._settings.jwt_audience,
-            )
-        except jwt.ExpiredSignatureError:
-            raise AuthError("Token expired", status_code=401)
-        except jwt.JWTError:
-            raise AuthError("Invalid token", status_code=401)
+1. Hash API key: `SHA-256(api_key)` → `key_hash`
+2. Lookup `key_hash` trong PostgreSQL `api_keys` table
+3. Verify: not expired, not revoked, status = `active`
+4. Extract: `tenant_id`, `agent_ids` (scoped access)
+5. Return `AuthContext`
 
-        return AuthContext(
-            user_id=payload["sub"],
-            tenant_id=payload["tenant_id"],
-            user_type="builder",
-            roles=payload.get("roles", []),
-        )
+API key format: `sk_live_{random_32_chars}`. Chỉ hash được lưu trong DB, không bao giờ lưu plaintext.
 
-    async def _validate_api_key(self, api_key: str) -> AuthContext:
-        """
-        Validate API key (End User authentication).
+Kết quả: trả về `AuthContext` với `user_id=key_record.id`, `tenant_id=key_record.tenant_id`, `user_type="end_user"`, `roles=[]`, `allowed_agent_ids=key_record.agent_ids`.
 
-        1. Hash the key: SHA-256(api_key) → key_hash
-        2. Lookup key_hash in PostgreSQL api_keys table
-        3. Verify: not expired, not revoked, status = active
-        4. Extract: tenant_id, agent_ids (scoped access)
-        5. Return AuthContext
+**AuthContext** — Data class được gắn vào `request.state.auth` sau khi authentication thành công:
 
-        API key format: "sk_live_{random_32_chars}"
-        Storage: only hash stored in DB (never plaintext)
-        """
-        key_hash = hashlib.sha256(api_key.encode()).hexdigest()
-        key_record = await self._api_key_repo.get_by_hash(key_hash)
+| Field | Type | Mô tả |
+|-------|------|--------|
+| `user_id` | str | ID của user |
+| `tenant_id` | str | ID của tenant |
+| `user_type` | Literal["builder", "end_user"] | Loại user |
+| `roles` | list[str] | Builder RBAC roles |
+| `allowed_agent_ids` | list[str] / None | End User: agents họ có thể access. None = all (cho builder) |
 
-        if not key_record:
-            raise AuthError("Invalid API key", status_code=401)
-        if key_record.status != "active":
-            raise AuthError("API key revoked or expired", status_code=401)
-        if key_record.expires_at and key_record.expires_at < utcnow():
-            raise AuthError("API key expired", status_code=401)
+**TenantMiddleware** (kế thừa BaseHTTPMiddleware) — Chạy SAU AuthMiddleware. Set PostgreSQL session variable cho Row-Level Security. Với mọi DB query trong request, PostgreSQL RLS policies sẽ tự động filter theo `tenant_id`. Logic: lấy `auth` từ `request.state`, nếu có thì set `request.state.tenant_id = auth.tenant_id`.
 
-        return AuthContext(
-            user_id=key_record.id,
-            tenant_id=key_record.tenant_id,
-            user_type="end_user",
-            roles=[],
-            allowed_agent_ids=key_record.agent_ids,  # scoped to specific agents
-        )
-```
+**FastAPI Depends helpers cho route-level auth checks:**
 
-```python
-@dataclass
-class AuthContext:
-    """Attached to request.state.auth after authentication."""
-    user_id: str
-    tenant_id: str
-    user_type: Literal["builder", "end_user"]
-    roles: list[str]                          # Builder RBAC roles
-    allowed_agent_ids: list[str] | None = None  # End User: agents they can access (None = all for builder)
-```
-
-```python
-class TenantMiddleware(BaseHTTPMiddleware):
-    """
-    Sets PostgreSQL session variable for Row-Level Security.
-    Must run AFTER AuthMiddleware.
-
-    For every DB query in this request, PostgreSQL RLS policies
-    will automatically filter by tenant_id.
-    """
-
-    async def dispatch(self, request: Request, call_next):
-        auth: AuthContext = getattr(request.state, "auth", None)
-        if auth:
-            # Set PostgreSQL session variable for RLS
-            # This is done via the DB session factory
-            request.state.tenant_id = auth.tenant_id
-        return await call_next(request)
-```
-
-```python
-# FastAPI Depends helpers for route-level auth checks
-
-def get_current_tenant(request: Request) -> str:
-    """Extract tenant_id from authenticated request."""
-    return request.state.auth.tenant_id
-
-
-def get_current_user(request: Request) -> AuthContext:
-    """Get full auth context."""
-    return request.state.auth
-
-
-def require_builder(auth: AuthContext = Depends(get_current_user)) -> AuthContext:
-    """Ensure caller is a Builder (not End User)."""
-    if auth.user_type != "builder":
-        raise HTTPException(403, detail="Builder access required")
-    return auth
-
-
-def require_agent_access(agent_id: str, auth: AuthContext = Depends(get_current_user)) -> AuthContext:
-    """
-    Ensure caller has access to this specific agent.
-    Builder: always has access (within tenant).
-    End User: only if agent_id is in their allowed_agent_ids.
-    """
-    if auth.user_type == "end_user":
-        if auth.allowed_agent_ids and agent_id not in auth.allowed_agent_ids:
-            raise HTTPException(403, detail="No access to this agent")
-    return auth
-```
+- `get_current_tenant(request)` → Extract `tenant_id` từ authenticated request (trả về `request.state.auth.tenant_id`).
+- `get_current_user(request)` → Get full `AuthContext` (trả về `request.state.auth`).
+- `require_builder(auth)` → Đảm bảo caller là Builder (không phải End User). Nếu `auth.user_type != "builder"` → raise `HTTPException(403, "Builder access required")`.
+- `require_agent_access(agent_id, auth)` → Đảm bảo caller có quyền access agent cụ thể. Builder: luôn có access (within tenant). End User: chỉ khi `agent_id` nằm trong `allowed_agent_ids`.
 
 **API Key Storage:**
 
-```sql
-CREATE TABLE api_keys (
-    id              TEXT PRIMARY KEY,
-    tenant_id       TEXT NOT NULL REFERENCES tenants(id),
-    key_hash        TEXT NOT NULL UNIQUE,      -- SHA-256 hash of the API key
-    name            TEXT NOT NULL,              -- human-readable label
-    agent_ids       TEXT[] NOT NULL,            -- agents this key can access
-    status          TEXT NOT NULL DEFAULT 'active'
-                    CHECK (status IN ('active', 'revoked')),
-    created_by      TEXT NOT NULL,              -- builder user_id who created it
-    expires_at      TIMESTAMPTZ,
-    last_used_at    TIMESTAMPTZ,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
+Table `api_keys`:
 
-ALTER TABLE api_keys ENABLE ROW LEVEL SECURITY;
-CREATE POLICY tenant_isolation ON api_keys
-    USING (tenant_id = current_setting('app.current_tenant'));
+| Column | Type | Constraints | Mô tả |
+|--------|------|-------------|--------|
+| `id` | TEXT | PRIMARY KEY | Unique identifier |
+| `tenant_id` | TEXT | NOT NULL, FK → tenants(id) | Tenant sở hữu key |
+| `key_hash` | TEXT | NOT NULL, UNIQUE | SHA-256 hash of the API key |
+| `name` | TEXT | NOT NULL | Human-readable label |
+| `agent_ids` | TEXT[] | NOT NULL | Agents key này có thể access |
+| `status` | TEXT | NOT NULL, DEFAULT 'active', CHECK IN ('active', 'revoked') | Trạng thái key |
+| `created_by` | TEXT | NOT NULL | Builder user_id đã tạo key |
+| `expires_at` | TIMESTAMPTZ | | Thời điểm hết hạn |
+| `last_used_at` | TIMESTAMPTZ | | Lần sử dụng gần nhất |
+| `created_at` | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | Thời điểm tạo |
 
-CREATE INDEX idx_api_keys_hash ON api_keys (key_hash);
-```
+Row Level Security được bật với policy `tenant_isolation` sử dụng `tenant_id = current_setting('app.current_tenant')`.
+
+Index: `idx_api_keys_hash` trên column `key_hash`.
 
 ---
 
 ### 2.4 Auth Failure Responses
 
-```json
-// 401 — missing or invalid credentials
-{
-  "error": {
-    "code": "UNAUTHORIZED",
-    "message": "Invalid or expired access token"
-  }
-}
+**401 — Missing or invalid credentials:**
 
-// 403 — valid credentials, insufficient permissions
-{
-  "error": {
-    "code": "FORBIDDEN",
-    "message": "API key does not have access to this agent"
-  }
-}
-```
+| Field | Value |
+|-------|-------|
+| `error.code` | `UNAUTHORIZED` |
+| `error.message` | `Invalid or expired access token` |
+
+**403 — Valid credentials, insufficient permissions:**
+
+| Field | Value |
+|-------|-------|
+| `error.code` | `FORBIDDEN` |
+| `error.message` | `API key does not have access to this agent` |
 
 ---
 
@@ -358,87 +233,62 @@ CREATE INDEX idx_api_keys_hash ON api_keys (key_hash);
 
 #### `POST /api/v1/agents` — Create Agent
 
-**Request:**
-```json
-{
-  "name": "Customer Support Agent",
-  "description": "Handles customer inquiries via CRM tools",
-  "system_prompt": "You are a helpful customer support agent...",
-  "model_config": {
-    "provider": "anthropic",
-    "model": "claude-sonnet-4-5-20250514",
-    "temperature": 1.0,
-    "max_tokens": 4096,
-    "timeout_seconds": 120.0
-  },
-  "execution_config": {
-    "pattern": "react",
-    "max_steps": 30,
-    "max_tokens_budget": 50000,
-    "max_cost_usd": 5.0,
-    "max_duration_seconds": 600,
-    "context_strategy": "summarize_recent"
-  },
-  "memory_config": {
-    "short_term": {
-      "strategy": "summarize_recent",
-      "max_context_tokens": 8000,
-      "recent_messages_to_keep": 20,
-      "summarization_threshold": 0.7
-    },
-    "working": {
-      "scratchpad_enabled": true,
-      "max_artifacts": 50
-    }
-  },
-  "guardrails_config": {
-    "input_validation": { "max_input_length": 10000 },
-    "injection_detection": { "enabled": true, "block_threshold": 0.9 },
-    "tool_permissions": [
-      {
-        "tool_pattern": "mcp:crm:*",
-        "actions": ["invoke"],
-        "constraints": {
-          "max_calls_per_session": 50,
-          "requires_approval": false
-        }
-      },
-      {
-        "tool_pattern": "mcp:email:send_*",
-        "actions": ["invoke"],
-        "constraints": {
-          "requires_approval": true
-        }
-      }
-    ],
-    "budget": {
-      "max_tokens_per_session": 50000,
-      "max_cost_per_session_usd": 5.0,
-      "max_steps_per_session": 50,
-      "warning_threshold": 0.8
-    }
-  },
-  "tools_config": {
-    "mcp_server_ids": ["server_crm_01", "server_email_01"],
-    "max_tools_per_prompt": 20
-  }
-}
-```
+**Request Body:**
+
+| Field | Type | Required | Mô tả |
+|-------|------|----------|--------|
+| `name` | string | Yes | Tên agent, ví dụ `Customer Support Agent` |
+| `description` | string | No | Mô tả agent |
+| `system_prompt` | string | Yes | System prompt cho agent |
+| `model_config` | object | Yes | Cấu hình LLM model |
+| `model_config.provider` | string | Yes | Provider, ví dụ `anthropic` |
+| `model_config.model` | string | Yes | Model name, ví dụ `claude-sonnet-4-5-20250514` |
+| `model_config.temperature` | float | No | Temperature, ví dụ `1.0` |
+| `model_config.max_tokens` | int | No | Max tokens per response, ví dụ `4096` |
+| `model_config.timeout_seconds` | float | No | Timeout cho LLM call, ví dụ `120.0` |
+| `execution_config` | object | Yes | Cấu hình execution |
+| `execution_config.pattern` | string | Yes | Execution pattern, ví dụ `react` |
+| `execution_config.max_steps` | int | No | Số step tối đa, ví dụ `30` |
+| `execution_config.max_tokens_budget` | int | No | Token budget, ví dụ `50000` |
+| `execution_config.max_cost_usd` | float | No | Cost limit, ví dụ `5.0` |
+| `execution_config.max_duration_seconds` | int | No | Duration limit, ví dụ `600` |
+| `execution_config.context_strategy` | string | No | Context strategy, ví dụ `summarize_recent` |
+| `memory_config` | object | No | Cấu hình memory |
+| `memory_config.short_term.strategy` | string | No | Strategy, ví dụ `summarize_recent` |
+| `memory_config.short_term.max_context_tokens` | int | No | Max context tokens, ví dụ `8000` |
+| `memory_config.short_term.recent_messages_to_keep` | int | No | Số messages giữ lại, ví dụ `20` |
+| `memory_config.short_term.summarization_threshold` | float | No | Threshold, ví dụ `0.7` |
+| `memory_config.working.scratchpad_enabled` | boolean | No | Bật scratchpad |
+| `memory_config.working.max_artifacts` | int | No | Max artifacts, ví dụ `50` |
+| `guardrails_config` | object | No | Cấu hình guardrails |
+| `guardrails_config.input_validation.max_input_length` | int | No | Max input length, ví dụ `10000` |
+| `guardrails_config.injection_detection.enabled` | boolean | No | Bật injection detection |
+| `guardrails_config.injection_detection.block_threshold` | float | No | Threshold để block, ví dụ `0.9` |
+| `guardrails_config.tool_permissions` | array | No | Danh sách tool permissions |
+| `guardrails_config.tool_permissions[].tool_pattern` | string | Yes | Pattern tool, ví dụ `mcp:crm:*` |
+| `guardrails_config.tool_permissions[].actions` | array | Yes | Allowed actions, ví dụ `["invoke"]` |
+| `guardrails_config.tool_permissions[].constraints.max_calls_per_session` | int | No | Max calls, ví dụ `50` |
+| `guardrails_config.tool_permissions[].constraints.requires_approval` | boolean | No | Yêu cầu approval |
+| `guardrails_config.budget` | object | No | Budget guardrail |
+| `guardrails_config.budget.max_tokens_per_session` | int | No | Max tokens, ví dụ `50000` |
+| `guardrails_config.budget.max_cost_per_session_usd` | float | No | Max cost, ví dụ `5.0` |
+| `guardrails_config.budget.max_steps_per_session` | int | No | Max steps, ví dụ `50` |
+| `guardrails_config.budget.warning_threshold` | float | No | Warning ratio, ví dụ `0.8` |
+| `tools_config` | object | No | Cấu hình tools |
+| `tools_config.mcp_server_ids` | array | No | Danh sách MCP server IDs |
+| `tools_config.max_tools_per_prompt` | int | No | Max tools per prompt, ví dụ `20` |
 
 **Response:** `201 Created`
-```json
-{
-  "data": {
-    "id": "agt_abc123",
-    "tenant_id": "tenant_xyz",
-    "name": "Customer Support Agent",
-    "status": "draft",
-    "created_at": "2026-03-26T10:30:00Z",
-    "updated_at": "2026-03-26T10:30:00Z"
-  },
-  "meta": { ... }
-}
-```
+
+| Field | Type | Mô tả |
+|-------|------|--------|
+| `data.id` | string | Agent ID, ví dụ `agt_abc123` |
+| `data.tenant_id` | string | Tenant ID |
+| `data.name` | string | Tên agent |
+| `data.status` | string | Trạng thái, luôn là `draft` khi mới tạo |
+| `data.created_at` | string (ISO 8601) | Thời điểm tạo |
+| `data.updated_at` | string (ISO 8601) | Thời điểm cập nhật |
+| `meta` | object | Request metadata |
 
 **Errors:**
 - `400 INVALID_AGENT_CONFIG` — config validation failed
@@ -458,23 +308,21 @@ CREATE INDEX idx_api_keys_hash ON api_keys (key_hash);
 | `cursor` | string | — | Pagination cursor |
 
 **Response:** `200 OK`
-```json
-{
-  "data": [
-    {
-      "id": "agt_abc123",
-      "name": "Customer Support Agent",
-      "description": "Handles customer inquiries via CRM tools",
-      "status": "active",
-      "model_config": { "provider": "anthropic", "model": "claude-sonnet-4-5-20250514" },
-      "created_at": "2026-03-26T10:30:00Z",
-      "updated_at": "2026-03-26T10:30:00Z"
-    }
-  ],
-  "pagination": { "limit": 20, "has_more": false, "next_cursor": null },
-  "meta": { ... }
-}
-```
+
+Trả về danh sách agents dạng paginated. Mỗi agent summary bao gồm:
+
+| Field | Type | Mô tả |
+|-------|------|--------|
+| `id` | string | Agent ID |
+| `name` | string | Tên agent |
+| `description` | string | Mô tả agent |
+| `status` | string | Trạng thái: `draft`, `active`, `archived` |
+| `model_config.provider` | string | Provider name |
+| `model_config.model` | string | Model name |
+| `created_at` | string (ISO 8601) | Thời điểm tạo |
+| `updated_at` | string (ISO 8601) | Thời điểm cập nhật |
+
+Kèm theo `pagination` object (xem Section 1.3) và `meta`.
 
 ---
 
@@ -535,30 +383,25 @@ Soft delete — set `status = "archived"`. Không xoá data.
 #### `GET /api/v1/sessions/{session_id}` — Get Session
 
 **Response:** `200 OK`
-```json
-{
-  "data": {
-    "id": "ses_def456",
-    "agent_id": "agt_abc123",
-    "state": "completed",
-    "step_index": 3,
-    "usage": {
-      "total_tokens": 12500,
-      "prompt_tokens": 9800,
-      "completion_tokens": 2700,
-      "total_cost_usd": 0.42,
-      "total_steps": 3,
-      "total_tool_calls": 2,
-      "total_llm_calls": 3,
-      "duration_seconds": 15.3
-    },
-    "user_type": "builder",
-    "created_at": "2026-03-26T10:31:00Z",
-    "completed_at": "2026-03-26T10:31:15Z"
-  },
-  "meta": { ... }
-}
-```
+
+| Field | Type | Mô tả |
+|-------|------|--------|
+| `data.id` | string | Session ID, ví dụ `ses_def456` |
+| `data.agent_id` | string | Agent ID |
+| `data.state` | string | Trạng thái session, ví dụ `completed` |
+| `data.step_index` | int | Số step đã thực hiện |
+| `data.usage.total_tokens` | int | Tổng tokens đã dùng |
+| `data.usage.prompt_tokens` | int | Tokens cho prompt |
+| `data.usage.completion_tokens` | int | Tokens cho completion |
+| `data.usage.total_cost_usd` | float | Tổng chi phí |
+| `data.usage.total_steps` | int | Tổng số steps |
+| `data.usage.total_tool_calls` | int | Tổng số tool calls |
+| `data.usage.total_llm_calls` | int | Tổng số LLM calls |
+| `data.usage.duration_seconds` | float | Thời gian execution |
+| `data.user_type` | string | Loại user: `builder` hoặc `end_user` |
+| `data.created_at` | string (ISO 8601) | Thời điểm tạo |
+| `data.completed_at` | string (ISO 8601) | Thời điểm hoàn thành |
+| `meta` | object | Request metadata |
 
 ---
 
@@ -567,16 +410,13 @@ Soft delete — set `status = "archived"`. Không xoá data.
 **Guard:** Session state phải là `RUNNING`.
 
 **Response:** `200 OK`
-```json
-{
-  "data": {
-    "id": "ses_def456",
-    "state": "paused",
-    "step_index": 2
-  },
-  "meta": { ... }
-}
-```
+
+| Field | Type | Mô tả |
+|-------|------|--------|
+| `data.id` | string | Session ID |
+| `data.state` | string | Chuyển sang `paused` |
+| `data.step_index` | int | Step index hiện tại |
+| `meta` | object | Request metadata |
 
 **Errors:**
 - `404 SESSION_NOT_FOUND`
@@ -589,16 +429,13 @@ Soft delete — set `status = "archived"`. Không xoá data.
 **Guard:** Session state phải là `PAUSED`.
 
 **Response:** `200 OK`
-```json
-{
-  "data": {
-    "id": "ses_def456",
-    "state": "running",
-    "step_index": 2
-  },
-  "meta": { ... }
-}
-```
+
+| Field | Type | Mô tả |
+|-------|------|--------|
+| `data.id` | string | Session ID |
+| `data.state` | string | Chuyển sang `running` |
+| `data.step_index` | int | Step index hiện tại |
+| `meta` | object | Request metadata |
 
 **Errors:**
 - `400 INVALID_STATE_TRANSITION` — session không ở state `PAUSED`
@@ -610,99 +447,71 @@ Soft delete — set `status = "archived"`. Không xoá data.
 > Trả về chi tiết từng step trong execution.
 
 **Response:** `200 OK`
-```json
-{
-  "data": {
-    "session_id": "ses_def456",
-    "total_steps": 3,
-    "steps": [
-      {
-        "step_index": 1,
-        "type": "tool_call",
-        "thought": "I need to search the CRM for this customer...",
-        "tool_calls": [
-          { "id": "tc_001", "name": "mcp:crm:search_customer", "arguments": {"email": "user@example.com"} }
-        ],
-        "tool_results": [
-          { "tool_call_id": "tc_001", "content": "{\"name\": \"John\", ...}", "is_error": false, "latency_ms": 120 }
-        ],
-        "usage": {
-          "prompt_tokens": 3200,
-          "completion_tokens": 450,
-          "cost_usd": 0.12,
-          "llm_latency_ms": 1200,
-          "tool_latency_ms": 120
-        },
-        "guardrail_checks": [
-          { "type": "injection_detection", "result": "pass", "latency_ms": 2 },
-          { "type": "tool_permission", "result": "pass", "latency_ms": 1 }
-        ],
-        "timestamp": "2026-03-26T10:31:01Z"
-      },
-      {
-        "step_index": 2,
-        "type": "waiting_input",
-        "thought": "I should send a follow-up email...",
-        "tool_calls": [
-          { "id": "tc_002", "name": "mcp:email:send_email", "arguments": {"to": "user@example.com", "subject": "Follow-up"} }
-        ],
-        "approval": {
-          "approval_id": "apr_789",
-          "status": "approved",
-          "approved_by": "builder_user_01",
-          "approved_at": "2026-03-26T10:31:08Z"
-        },
-        "timestamp": "2026-03-26T10:31:05Z"
-      },
-      {
-        "step_index": 3,
-        "type": "final_answer",
-        "answer": "I've found the customer record and sent a follow-up email...",
-        "usage": {
-          "prompt_tokens": 4100,
-          "completion_tokens": 350,
-          "cost_usd": 0.15,
-          "llm_latency_ms": 980
-        },
-        "timestamp": "2026-03-26T10:31:14Z"
-      }
-    ]
-  },
-  "meta": { ... }
-}
-```
+
+| Field | Type | Mô tả |
+|-------|------|--------|
+| `data.session_id` | string | Session ID |
+| `data.total_steps` | int | Tổng số steps |
+| `data.steps` | array | Danh sách steps |
+
+Mỗi step trong `data.steps` bao gồm:
+
+| Field | Type | Mô tả |
+|-------|------|--------|
+| `step_index` | int | Số thứ tự step |
+| `type` | string | Loại step: `tool_call`, `waiting_input`, `final_answer` |
+| `thought` | string | LLM reasoning (nếu có) |
+| `tool_calls` | array | Danh sách tool calls (nếu type = `tool_call` hoặc `waiting_input`) |
+| `tool_calls[].id` | string | Tool call ID, ví dụ `tc_001` |
+| `tool_calls[].name` | string | Tên tool, ví dụ `mcp:crm:search_customer` |
+| `tool_calls[].arguments` | object | Arguments truyền vào tool |
+| `tool_results` | array | Kết quả tool (nếu có) |
+| `tool_results[].tool_call_id` | string | ID tương ứng với tool_call |
+| `tool_results[].content` | string | Nội dung kết quả |
+| `tool_results[].is_error` | boolean | Có lỗi hay không |
+| `tool_results[].latency_ms` | float | Latency tool execution |
+| `usage.prompt_tokens` | int | Tokens cho prompt |
+| `usage.completion_tokens` | int | Tokens cho completion |
+| `usage.cost_usd` | float | Chi phí step |
+| `usage.llm_latency_ms` | float | LLM latency |
+| `usage.tool_latency_ms` | float | Tool latency (nếu có) |
+| `guardrail_checks` | array | Kết quả guardrail checks (nếu có) |
+| `guardrail_checks[].type` | string | Loại check, ví dụ `injection_detection` |
+| `guardrail_checks[].result` | string | Kết quả: `pass` hoặc `blocked` |
+| `guardrail_checks[].latency_ms` | float | Latency check |
+| `approval` | object | Thông tin approval (nếu type = `waiting_input`) |
+| `approval.approval_id` | string | Approval ID |
+| `approval.status` | string | `approved` hoặc `rejected` |
+| `approval.approved_by` | string | User đã approve |
+| `approval.approved_at` | string (ISO 8601) | Thời điểm approve |
+| `answer` | string | Final answer (nếu type = `final_answer`) |
+| `timestamp` | string (ISO 8601) | Thời điểm step |
 
 ---
 
 #### `GET /api/v1/sessions/{session_id}/cost` — Cost Breakdown
 
 **Response:** `200 OK`
-```json
-{
-  "data": {
-    "session_id": "ses_def456",
-    "total_cost_usd": 0.42,
-    "breakdown": {
-      "llm_calls": [
-        { "step_index": 1, "model": "claude-sonnet-4-5-20250514", "input_tokens": 3200, "output_tokens": 450, "cost_usd": 0.12 },
-        { "step_index": 2, "model": "claude-sonnet-4-5-20250514", "input_tokens": 2500, "output_tokens": 200, "cost_usd": 0.09 },
-        { "step_index": 3, "model": "claude-sonnet-4-5-20250514", "input_tokens": 4100, "output_tokens": 350, "cost_usd": 0.15 }
-      ],
-      "tool_calls": [
-        { "step_index": 1, "tool_name": "mcp:crm:search_customer", "cost_usd": 0.0 },
-        { "step_index": 2, "tool_name": "mcp:email:send_email", "cost_usd": 0.0 }
-      ],
-      "totals": {
-        "llm_cost_usd": 0.36,
-        "tool_cost_usd": 0.0,
-        "total_input_tokens": 9800,
-        "total_output_tokens": 1000
-      }
-    }
-  },
-  "meta": { ... }
-}
-```
+
+| Field | Type | Mô tả |
+|-------|------|--------|
+| `data.session_id` | string | Session ID |
+| `data.total_cost_usd` | float | Tổng chi phí session |
+| `data.breakdown.llm_calls` | array | Chi tiết từng LLM call |
+| `data.breakdown.llm_calls[].step_index` | int | Step number |
+| `data.breakdown.llm_calls[].model` | string | Model đã dùng |
+| `data.breakdown.llm_calls[].input_tokens` | int | Input tokens |
+| `data.breakdown.llm_calls[].output_tokens` | int | Output tokens |
+| `data.breakdown.llm_calls[].cost_usd` | float | Chi phí LLM call |
+| `data.breakdown.tool_calls` | array | Chi tiết từng tool call |
+| `data.breakdown.tool_calls[].step_index` | int | Step number |
+| `data.breakdown.tool_calls[].tool_name` | string | Tên tool |
+| `data.breakdown.tool_calls[].cost_usd` | float | Chi phí tool call |
+| `data.breakdown.totals.llm_cost_usd` | float | Tổng chi phí LLM |
+| `data.breakdown.totals.tool_cost_usd` | float | Tổng chi phí tools |
+| `data.breakdown.totals.total_input_tokens` | int | Tổng input tokens |
+| `data.breakdown.totals.total_output_tokens` | int | Tổng output tokens |
+| `meta` | object | Request metadata |
 
 ---
 
@@ -722,33 +531,22 @@ Soft delete — set `status = "archived"`. Không xoá data.
 | `cursor` | string | — | Pagination cursor |
 
 **Response:** `200 OK`
-```json
-{
-  "data": [
-    {
-      "id": "mcp:github:create_issue",
-      "name": "create_issue",
-      "server_id": "server_github_01",
-      "namespace": "mcp:github",
-      "description": "Create a new issue in a GitHub repository",
-      "input_schema": {
-        "type": "object",
-        "properties": {
-          "repo": { "type": "string" },
-          "title": { "type": "string" },
-          "body": { "type": "string" }
-        },
-        "required": ["repo", "title"]
-      },
-      "risk_level": "medium",
-      "requires_approval": false,
-      "status": "active"
-    }
-  ],
-  "pagination": { ... },
-  "meta": { ... }
-}
-```
+
+Trả về danh sách tools dạng paginated. Mỗi tool bao gồm:
+
+| Field | Type | Mô tả |
+|-------|------|--------|
+| `id` | string | Tool ID, ví dụ `mcp:github:create_issue` |
+| `name` | string | Tên tool |
+| `server_id` | string | MCP server ID |
+| `namespace` | string | Tool namespace |
+| `description` | string | Mô tả tool |
+| `input_schema` | object | JSON Schema mô tả input của tool (type, properties, required) |
+| `risk_level` | string | Mức rủi ro: `low`, `medium`, `high`, `critical` |
+| `requires_approval` | boolean | Có yêu cầu approval không |
+| `status` | string | Trạng thái: `active`, `degraded`, `unavailable` |
+
+Kèm theo `pagination` và `meta`.
 
 ---
 
@@ -757,55 +555,47 @@ Soft delete — set `status = "archived"`. Không xoá data.
 #### `GET /api/v1/mcp-servers` — List MCP Servers
 
 **Response:** `200 OK`
-```json
-{
-  "data": [
-    {
-      "id": "server_github_01",
-      "name": "GitHub MCP",
-      "transport": "stdio",
-      "status": "connected",
-      "tools_count": 12,
-      "last_connected_at": "2026-03-26T10:00:00Z"
-    }
-  ],
-  "meta": { ... }
-}
-```
+
+Trả về danh sách MCP servers. Mỗi server bao gồm:
+
+| Field | Type | Mô tả |
+|-------|------|--------|
+| `id` | string | Server ID, ví dụ `server_github_01` |
+| `name` | string | Tên server |
+| `transport` | string | Transport type, ví dụ `stdio` |
+| `status` | string | Trạng thái: `connected`, `connecting`, `disconnected` |
+| `tools_count` | int | Số tools đã discover |
+| `last_connected_at` | string (ISO 8601) | Thời điểm connect gần nhất |
+
+Kèm theo `meta`.
 
 ---
 
 #### `POST /api/v1/mcp-servers` — Register MCP Server
 
-**Request:**
-```json
-{
-  "name": "GitHub MCP Server",
-  "description": "GitHub integration via MCP",
-  "transport": "stdio",
-  "command": "npx",
-  "args": ["-y", "@modelcontextprotocol/server-github"],
-  "env": {
-    "GITHUB_TOKEN": "ghp_..."
-  },
-  "auto_start": true,
-  "health_check_interval_seconds": 60
-}
-```
+**Request Body:**
+
+| Field | Type | Required | Mô tả |
+|-------|------|----------|--------|
+| `name` | string | Yes | Tên server, ví dụ `GitHub MCP Server` |
+| `description` | string | No | Mô tả server |
+| `transport` | string | Yes | Transport type: `stdio` |
+| `command` | string | Yes | Command để start server, ví dụ `npx` |
+| `args` | array | No | Arguments cho command, ví dụ `["-y", "@modelcontextprotocol/server-github"]` |
+| `env` | object | No | Environment variables, ví dụ `{"GITHUB_TOKEN": "ghp_..."}` |
+| `auto_start` | boolean | No | Tự động start khi register |
+| `health_check_interval_seconds` | int | No | Interval health check, ví dụ `60` |
 
 **Response:** `201 Created`
-```json
-{
-  "data": {
-    "id": "server_github_01",
-    "name": "GitHub MCP Server",
-    "transport": "stdio",
-    "status": "connecting",
-    "tools_discovered": []
-  },
-  "meta": { ... }
-}
-```
+
+| Field | Type | Mô tả |
+|-------|------|--------|
+| `data.id` | string | Server ID |
+| `data.name` | string | Tên server |
+| `data.transport` | string | Transport type |
+| `data.status` | string | Trạng thái ban đầu: `connecting` |
+| `data.tools_discovered` | array | Danh sách tools (ban đầu trống) |
+| `meta` | object | Request metadata |
 
 > Server sẽ tự connect + discover tools trong background. Client poll `GET /api/v1/mcp-servers/{id}` để check status.
 
@@ -832,28 +622,23 @@ Soft delete — set `status = "archived"`. Không xoá data.
 | `cursor` | string | — | Pagination cursor |
 
 **Response:** `200 OK`
-```json
-{
-  "data": [
-    {
-      "id": "evt_001",
-      "timestamp": "2026-03-26T10:31:01Z",
-      "category": "guardrail_check",
-      "action": "injection_detection",
-      "actor": { "type": "system", "id": "guardrail_engine" },
-      "outcome": "success",
-      "details": {
-        "check_type": "injection_detection",
-        "result": "pass",
-        "confidence": 0.05,
-        "latency_ms": 2.1
-      }
-    }
-  ],
-  "pagination": { ... },
-  "meta": { ... }
-}
-```
+
+Trả về danh sách audit events dạng paginated. Mỗi event bao gồm:
+
+| Field | Type | Mô tả |
+|-------|------|--------|
+| `id` | string | Event ID, ví dụ `evt_001` |
+| `timestamp` | string (ISO 8601) | Thời điểm event |
+| `category` | string | Loại: `guardrail_check`, `llm_call`, `tool_call` |
+| `action` | string | Hành động cụ thể, ví dụ `injection_detection` |
+| `actor.type` | string | Loại actor: `system`, `user` |
+| `actor.id` | string | ID actor |
+| `outcome` | string | Kết quả: `success`, `failure`, `blocked` |
+| `details` | object | Thông tin chi tiết (tuỳ category) |
+
+Ví dụ `details` cho `guardrail_check`: chứa `check_type`, `result`, `confidence`, `latency_ms`.
+
+Kèm theo `pagination` và `meta`.
 
 ---
 
@@ -871,25 +656,21 @@ Same schema as session audit, filtered by agent_id.
 
 #### `POST /api/v1/sessions` — Create Session
 
-**Request:**
-```json
-{
-  "agent_id": "agt_abc123"
-}
-```
+**Request Body:**
+
+| Field | Type | Required | Mô tả |
+|-------|------|----------|--------|
+| `agent_id` | string | Yes | ID của agent cần tạo session |
 
 **Response:** `201 Created`
-```json
-{
-  "data": {
-    "id": "ses_def456",
-    "agent_id": "agt_abc123",
-    "state": "created",
-    "created_at": "2026-03-26T10:31:00Z"
-  },
-  "meta": { ... }
-}
-```
+
+| Field | Type | Mô tả |
+|-------|------|--------|
+| `data.id` | string | Session ID, ví dụ `ses_def456` |
+| `data.agent_id` | string | Agent ID |
+| `data.state` | string | Trạng thái ban đầu: `created` |
+| `data.created_at` | string (ISO 8601) | Thời điểm tạo |
+| `meta` | object | Request metadata |
 
 **Errors:**
 - `404 AGENT_NOT_FOUND` — agent không tồn tại hoặc không active
@@ -903,24 +684,20 @@ Same schema as session audit, filtered by agent_id.
 
 > Gửi message và trigger execution. Response trả về ngay (202 Accepted). Client nhận kết quả qua SSE stream.
 
-**Request:**
-```json
-{
-  "content": "Find customer John Doe and check his recent orders"
-}
-```
+**Request Body:**
+
+| Field | Type | Required | Mô tả |
+|-------|------|----------|--------|
+| `content` | string | Yes | Nội dung message, ví dụ `Find customer John Doe and check his recent orders` |
 
 **Response:** `202 Accepted`
-```json
-{
-  "data": {
-    "message_id": "msg_ghi789",
-    "session_id": "ses_def456",
-    "state": "running"
-  },
-  "meta": { ... }
-}
-```
+
+| Field | Type | Mô tả |
+|-------|------|--------|
+| `data.message_id` | string | Message ID, ví dụ `msg_ghi789` |
+| `data.session_id` | string | Session ID |
+| `data.state` | string | Trạng thái: `running` |
+| `meta` | object | Request metadata |
 
 **Errors:**
 - `404 SESSION_NOT_FOUND`
@@ -938,26 +715,18 @@ Same schema as session audit, filtered by agent_id.
 #### `GET /api/v1/sessions/{session_id}/messages` — Get Conversation History
 
 **Response:** `200 OK`
-```json
-{
-  "data": [
-    {
-      "id": "msg_001",
-      "role": "user",
-      "content": "Find customer John Doe",
-      "created_at": "2026-03-26T10:31:00Z"
-    },
-    {
-      "id": "msg_002",
-      "role": "assistant",
-      "content": "I found John Doe's record...",
-      "tokens": 450,
-      "created_at": "2026-03-26T10:31:14Z"
-    }
-  ],
-  "meta": { ... }
-}
-```
+
+Trả về danh sách messages. Mỗi message bao gồm:
+
+| Field | Type | Mô tả |
+|-------|------|--------|
+| `id` | string | Message ID |
+| `role` | string | `user` hoặc `assistant` |
+| `content` | string | Nội dung message |
+| `tokens` | int | Số tokens (chỉ có ở assistant messages) |
+| `created_at` | string (ISO 8601) | Thời điểm tạo |
+
+Kèm theo `meta`.
 
 > Chỉ trả về messages với `role` = `user` hoặc `assistant`. System messages và tool messages không expose cho end user.
 
@@ -970,6 +739,7 @@ Same schema as session audit, filtered by agent_id.
 > Server-Sent Events (SSE). Client giữ connection mở để nhận events real-time.
 
 **Headers:**
+
 ```
 Accept: text/event-stream
 Authorization: X-API-Key {api_key}
@@ -983,59 +753,24 @@ Authorization: X-API-Key {api_key}
 
 ### 4.4 SSE Event Types
 
-```
-event: heartbeat
-id: evt_000
-data: {}
+Mỗi SSE event có format: `event: {type}`, `id: {event_id}`, `data: {json_payload}`.
 
-event: step_start
-id: evt_001
-data: {"step_index": 1, "pattern": "react"}
+Danh sách event types và data payload:
 
-event: thought
-id: evt_002
-data: {"content": "I need to search the CRM for this customer..."}
-
-event: tool_call
-id: evt_003
-data: {"tool_name": "mcp:crm:search_customer", "arguments": {"email": "user@example.com"}}
-
-event: tool_result
-id: evt_004
-data: {"tool_name": "mcp:crm:search_customer", "content_preview": "{\"name\": \"John\", ...}", "is_error": false, "latency_ms": 120}
-
-event: text_delta
-id: evt_005
-data: {"content": "I found "}
-
-event: text_delta
-id: evt_006
-data: {"content": "the customer record..."}
-
-event: approval_requested
-id: evt_007
-data: {"approval_id": "apr_789", "tool_name": "mcp:email:send_email", "reason": "High-risk tool requires approval", "timeout_seconds": 3600}
-
-event: budget_warning
-id: evt_008
-data: {"budget_type": "tokens", "usage_ratio": 0.85, "message": "85% of token budget used"}
-
-event: guardrail_check
-id: evt_009
-data: {"check_type": "injection_detection", "result": "pass"}
-
-event: error
-id: evt_010
-data: {"code": "TOOL_TIMEOUT", "message": "Tool mcp:crm:search timed out after 30s", "retryable": false}
-
-event: final_answer
-id: evt_011
-data: {"content": "I've found John Doe's record and sent a follow-up email.", "usage": {"total_tokens": 12500, "total_cost_usd": 0.42, "total_steps": 3}}
-
-event: done
-id: evt_012
-data: {"session_state": "completed"}
-```
+| Event | Data Fields | Mô tả |
+|-------|-------------|--------|
+| `heartbeat` | (trống) | Keep-alive |
+| `step_start` | `step_index`, `pattern` | Bắt đầu step mới, ví dụ step_index=1, pattern=react |
+| `thought` | `content` | LLM reasoning, ví dụ "I need to search the CRM..." |
+| `tool_call` | `tool_name`, `arguments` | Tool invocation bắt đầu |
+| `tool_result` | `tool_name`, `content_preview`, `is_error`, `latency_ms` | Kết quả tool (truncated) |
+| `text_delta` | `content` | Partial text response (streaming) |
+| `approval_requested` | `approval_id`, `tool_name`, `reason`, `timeout_seconds` | Yêu cầu human approval |
+| `budget_warning` | `budget_type`, `usage_ratio`, `message` | Budget warning, ví dụ "85% of token budget used" |
+| `guardrail_check` | `check_type`, `result` | Guardrail status |
+| `error` | `code`, `message`, `retryable` | Error notification |
+| `final_answer` | `content`, `usage` (chứa `total_tokens`, `total_cost_usd`, `total_steps`) | Final response kèm usage stats |
+| `done` | `session_state` | Stream kết thúc, ví dụ session_state=completed |
 
 ### 4.5 SSE Event Reference
 
@@ -1058,36 +793,31 @@ data: {"session_state": "completed"}
 
 #### `POST /api/v1/sessions/{session_id}/approve` — Approve Tool Call
 
-**Request:**
-```json
-{
-  "approval_id": "apr_789",
-  "decision": "approve"
-}
-```
+**Request Body:**
+
+| Field | Type | Required | Mô tả |
+|-------|------|----------|--------|
+| `approval_id` | string | Yes | ID approval cần approve |
+| `decision` | string | Yes | Giá trị: `approve` |
 
 **Response:** `200 OK`
-```json
-{
-  "data": {
-    "approval_id": "apr_789",
-    "decision": "approve",
-    "session_state": "running"
-  },
-  "meta": { ... }
-}
-```
+
+| Field | Type | Mô tả |
+|-------|------|--------|
+| `data.approval_id` | string | Approval ID |
+| `data.decision` | string | `approve` |
+| `data.session_state` | string | Trạng thái session sau approve: `running` |
+| `meta` | object | Request metadata |
 
 #### `POST /api/v1/sessions/{session_id}/reject` — Reject Tool Call
 
-**Request:**
-```json
-{
-  "approval_id": "apr_789",
-  "decision": "reject",
-  "reason": "Do not send email to this address"
-}
-```
+**Request Body:**
+
+| Field | Type | Required | Mô tả |
+|-------|------|----------|--------|
+| `approval_id` | string | Yes | ID approval cần reject |
+| `decision` | string | Yes | Giá trị: `reject` |
+| `reason` | string | No | Lý do reject, ví dụ `Do not send email to this address` |
 
 **Response:** `200 OK`
 
@@ -1101,35 +831,29 @@ data: {"session_state": "completed"}
 
 #### `GET /health` — Liveness
 
-```json
-{ "status": "ok" }
-```
+Trả về trạng thái liveness. Response chứa field `status` với giá trị `ok`.
 
 #### `GET /ready` — Readiness
 
-```json
-{
-  "status": "ready",
-  "checks": {
-    "postgresql": "ok",
-    "redis": "ok",
-    "llm_provider": "ok"
-  }
-}
-```
+Trả về trạng thái readiness, kiểm tra tất cả dependencies.
 
-Nếu bất kỳ check nào fail:
-```json
-{
-  "status": "not_ready",
-  "checks": {
-    "postgresql": "ok",
-    "redis": "error",
-    "llm_provider": "ok"
-  }
-}
-```
-HTTP Status: `503 Service Unavailable`
+**Response khi healthy:**
+
+| Field | Type | Mô tả |
+|-------|------|--------|
+| `status` | string | `ready` |
+| `checks.postgresql` | string | `ok` |
+| `checks.redis` | string | `ok` |
+| `checks.llm_provider` | string | `ok` |
+
+**Response khi unhealthy (HTTP Status: `503 Service Unavailable`):**
+
+| Field | Type | Mô tả |
+|-------|------|--------|
+| `status` | string | `not_ready` |
+| `checks.postgresql` | string | `ok` hoặc `error` |
+| `checks.redis` | string | `ok` hoặc `error` |
+| `checks.llm_provider` | string | `ok` hoặc `error` |
 
 ---
 
@@ -1137,16 +861,20 @@ HTTP Status: `503 Service Unavailable`
 
 ### 6.1 Error Response Schema
 
-```python
-class ErrorResponse(BaseModel):
-    error: ErrorDetail
-    meta: ResponseMeta
+**ErrorResponse** gồm 2 fields chính:
 
-class ErrorDetail(BaseModel):
-    code: str                        # machine-readable (see data-models.md Section 9.3)
-    message: str                     # human-readable
-    details: dict = {}               # structured context
-```
+| Field | Type | Mô tả |
+|-------|------|--------|
+| `error` | ErrorDetail | Chi tiết lỗi |
+| `meta` | ResponseMeta | Request metadata |
+
+**ErrorDetail:**
+
+| Field | Type | Mô tả |
+|-------|------|--------|
+| `code` | str | Machine-readable error code (xem `01-data-models.md` Section 9.3) |
+| `message` | str | Human-readable error message |
+| `details` | dict | Structured context bổ sung (default: trống) |
 
 ### 6.2 Error Codes Table
 
@@ -1187,25 +915,24 @@ class ErrorDetail(BaseModel):
 
 ### 7.2 Rate Limit Response
 
-```
-HTTP/1.1 429 Too Many Requests
-X-RateLimit-Limit: 60
-X-RateLimit-Remaining: 0
-X-RateLimit-Reset: 1711443600
-Retry-After: 45
+Khi bị rate limit, server trả về HTTP `429 Too Many Requests` với các headers:
 
-{
-  "error": {
-    "code": "RATE_LIMITED",
-    "message": "Rate limit exceeded. Retry after 45 seconds.",
-    "details": {
-      "limit": 60,
-      "window_seconds": 60,
-      "retry_after_seconds": 45
-    }
-  }
-}
-```
+| Header | Ví dụ | Mô tả |
+|--------|-------|--------|
+| `X-RateLimit-Limit` | `60` | Requests allowed per window |
+| `X-RateLimit-Remaining` | `0` | Requests remaining |
+| `X-RateLimit-Reset` | `1711443600` | Unix timestamp khi window reset |
+| `Retry-After` | `45` | Seconds to wait |
+
+Error body:
+
+| Field | Value | Mô tả |
+|-------|-------|--------|
+| `error.code` | `RATE_LIMITED` | Error code |
+| `error.message` | `Rate limit exceeded. Retry after 45 seconds.` | Human-readable message |
+| `error.details.limit` | `60` | Request limit per window |
+| `error.details.window_seconds` | `60` | Window duration |
+| `error.details.retry_after_seconds` | `45` | Seconds to wait |
 
 ---
 

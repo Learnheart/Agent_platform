@@ -41,112 +41,78 @@ LLM Gateway là abstraction layer giữa Executor và LLM providers. Mọi LLM c
 
 ### 2.1 LLMGateway Protocol
 
-```python
-class LLMGateway(Protocol):
-    async def chat(
-        self,
-        model: str,
-        messages: list[Message],
-        tools: list[ToolSchema] | None = None,
-        config: LLMConfig | None = None,
-    ) -> LLMResponse:
-        """Non-streaming LLM call. Blocks until complete response."""
+`LLMGateway` là một Protocol class định nghĩa interface chung cho mọi LLM provider. Các method:
 
-    async def chat_stream(
-        self,
-        model: str,
-        messages: list[Message],
-        tools: list[ToolSchema] | None = None,
-        config: LLMConfig | None = None,
-    ) -> AsyncIterator[LLMStreamEvent]:
-        """Streaming LLM call. Yields events as they arrive."""
+| Method | Parameters | Return Type | Description |
+|--------|-----------|-------------|-------------|
+| `chat` | `model: str`, `messages: list[Message]`, `tools: list[ToolSchema] \| None = None`, `config: LLMConfig \| None = None` | `LLMResponse` | Non-streaming LLM call. Blocks until complete response. |
+| `chat_stream` | `model: str`, `messages: list[Message]`, `tools: list[ToolSchema] \| None = None`, `config: LLMConfig \| None = None` | `AsyncIterator[LLMStreamEvent]` | Streaming LLM call. Yields events as they arrive. |
+| `count_tokens` | `model: str`, `messages: list[Message]`, `tools: list[ToolSchema] \| None = None` | `int` | Pre-call token count estimation. |
 
-    async def count_tokens(
-        self,
-        model: str,
-        messages: list[Message],
-        tools: list[ToolSchema] | None = None,
-    ) -> int:
-        """Pre-call token count estimation."""
-```
+Tất cả method đều là `async`.
 
 ### 2.2 Data Models
 
 > Canonical definitions trong [`01-data-models.md`](01-data-models.md) Section 5. Summary:
 
-```python
-@dataclass
-class LLMResponse:
-    content: str | None
-    tool_calls: list[ToolCall] | None
-    usage: TokenUsage
-    model: str
-    provider: str
-    latency_ms: float
-    stop_reason: str      # "end_turn" | "tool_use" | "max_tokens" | "stop_sequence"
+**LLMResponse**
 
-@dataclass
-class TokenUsage:
-    prompt_tokens: int
-    completion_tokens: int
-    total_tokens: int
-    cached_tokens: int | None = None
-    cost_usd: float | None = None
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `content` | `str \| None` | — | Nội dung text response từ LLM |
+| `tool_calls` | `list[ToolCall] \| None` | — | Danh sách tool calls nếu LLM yêu cầu gọi tool |
+| `usage` | `TokenUsage` | — | Thông tin token usage |
+| `model` | `str` | — | Tên model thực tế trả về |
+| `provider` | `str` | — | Tên provider (e.g., "anthropic") |
+| `latency_ms` | `float` | — | Thời gian xử lý call (ms) |
+| `stop_reason` | `str` | — | Lý do dừng: "end_turn", "tool_use", "max_tokens", hoặc "stop_sequence" |
 
-@dataclass
-class LLMConfig:
-    temperature: float = 1.0
-    max_tokens: int = 4096
-    timeout_seconds: float = 120.0
-    retry_policy: RetryPolicy | None = None
+**TokenUsage**
 
-@dataclass
-class RetryPolicy:
-    max_retries: int = 3
-    backoff_base_seconds: float = 1.0
-    backoff_multiplier: float = 2.0
-    backoff_max_seconds: float = 30.0
-    retryable_status_codes: list[int] = field(
-        default_factory=lambda: [429, 500, 502, 503, 529]
-    )
-```
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `prompt_tokens` | `int` | — | Số token trong prompt (input) |
+| `completion_tokens` | `int` | — | Số token trong completion (output) |
+| `total_tokens` | `int` | — | Tổng số token (input + output) |
+| `cached_tokens` | `int \| None` | `None` | Số token được cache hit (prompt caching) |
+| `cost_usd` | `float \| None` | `None` | Chi phí ước tính (USD) |
+
+**LLMConfig**
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `temperature` | `float` | `1.0` | Temperature cho sampling |
+| `max_tokens` | `int` | `4096` | Số token tối đa cho response |
+| `timeout_seconds` | `float` | `120.0` | Timeout cho call |
+| `retry_policy` | `RetryPolicy \| None` | `None` | Retry policy, dùng default nếu None |
+
+**RetryPolicy**
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `max_retries` | `int` | `3` | Số lần retry tối đa |
+| `backoff_base_seconds` | `float` | `1.0` | Base time cho exponential backoff |
+| `backoff_multiplier` | `float` | `2.0` | Multiplier cho backoff |
+| `backoff_max_seconds` | `float` | `30.0` | Thời gian backoff tối đa |
+| `retryable_status_codes` | `list[int]` | `[429, 500, 502, 503, 529]` | Các HTTP status codes cho phép retry |
 
 ### 2.3 LLMStreamEvent
 
-```python
-@dataclass
-class LLMStreamEvent:
-    type: Literal[
-        "text_delta",        # partial text
-        "tool_call_start",   # tool call begins: id + name
-        "tool_call_delta",   # partial tool arguments (JSON string chunk)
-        "tool_call_end",     # tool call complete: full ToolCall
-        "usage",             # token usage (arrives near end)
-        "done",              # stream finished
-        "error",             # stream error
-    ]
+**LLMStreamEvent** là dataclass đại diện cho một sự kiện trong streaming response. Trường `type` xác định loại event, các trường còn lại chỉ có giá trị tương ứng với type đó.
 
-    # text_delta
-    content: str | None = None
+**Các giá trị `type` hợp lệ:**
 
-    # tool_call_start
-    tool_call_id: str | None = None
-    tool_name: str | None = None
+| Type | Mô tả | Trường liên quan |
+|------|--------|-----------------|
+| `"text_delta"` | Partial text content | `content: str` |
+| `"tool_call_start"` | Tool call bắt đầu: id + name | `tool_call_id: str`, `tool_name: str` |
+| `"tool_call_delta"` | Partial tool arguments (JSON string chunk) | `tool_call_id: str`, `arguments_delta: str` |
+| `"tool_call_end"` | Tool call hoàn tất: full ToolCall | `tool_call: ToolCall` |
+| `"usage"` | Token usage (arrives near end) | `usage: TokenUsage` |
+| `"done"` | Stream finished | `usage: TokenUsage`, `stop_reason: str` |
+| `"error"` | Stream error | `error_message: str`, `error_category: str` |
 
-    # tool_call_delta
-    arguments_delta: str | None = None
-
-    # tool_call_end
-    tool_call: ToolCall | None = None
-
-    # usage / done
-    usage: TokenUsage | None = None
-    stop_reason: str | None = None
-
-    # error
-    error_message: str | None = None
-    error_category: str | None = None
-```
+Tất cả trường (trừ `type`) đều optional, default `None`.
 
 **Mapping từ Anthropic SDK events:**
 
@@ -167,175 +133,73 @@ class LLMStreamEvent:
 
 ### 3.1 Class Structure
 
-```python
-class AnthropicGateway:
-    """LLMGateway implementation using Anthropic Python SDK."""
+`AnthropicGateway` là implementation class của `LLMGateway` protocol, sử dụng Anthropic Python SDK.
 
-    def __init__(self, config: AnthropicGatewayConfig):
-        self._client = anthropic.AsyncAnthropic(
-            api_key=config.api_key,
-            max_retries=0,              # we handle retries ourselves
-            timeout=httpx.Timeout(
-                connect=10.0,
-                read=config.default_timeout,
-                write=10.0,
-                pool=10.0,
-            ),
-            http_client=httpx.AsyncClient(
-                limits=httpx.Limits(
-                    max_connections=config.max_connections,
-                    max_keepalive_connections=config.max_keepalive,
-                ),
-            ),
-        )
-        self._pricing = config.pricing
-        self._default_config = config.default_llm_config
+**Constructor** nhận `AnthropicGatewayConfig` và khởi tạo:
+- Một `anthropic.AsyncAnthropic` client với `max_retries=0` (tự handle retry), timeout tùy chỉnh qua `httpx.Timeout` (connect=10s, read=config.default_timeout, write=10s, pool=10s), và HTTP client với connection pool limits (`max_connections`, `max_keepalive` từ config).
+- Lưu `pricing` và `default_llm_config` từ config.
 
-    async def chat(self, model, messages, tools=None, config=None) -> LLMResponse: ...
-    async def chat_stream(self, model, messages, tools=None, config=None) -> AsyncIterator[LLMStreamEvent]: ...
-    async def count_tokens(self, model, messages, tools=None) -> int: ...
-```
+**Methods:** `chat`, `chat_stream`, `count_tokens` — implement đúng `LLMGateway` protocol (xem chi tiết bên dưới).
 
 ### 3.2 Configuration
 
-```python
-@dataclass
-class AnthropicGatewayConfig:
-    api_key: str
-    default_timeout: float = 120.0
-    max_connections: int = 100        # httpx connection pool max
-    max_keepalive: int = 20           # persistent connections
-    default_llm_config: LLMConfig = field(default_factory=LLMConfig)
-    pricing: ModelPricing = field(default_factory=lambda: DEFAULT_PRICING)
-```
+**AnthropicGatewayConfig**
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `api_key` | `str` | — | Anthropic API key |
+| `default_timeout` | `float` | `120.0` | Default read timeout (seconds) |
+| `max_connections` | `int` | `100` | httpx connection pool max connections |
+| `max_keepalive` | `int` | `20` | Persistent keep-alive connections |
+| `default_llm_config` | `LLMConfig` | `LLMConfig()` | Default LLM config dùng khi caller không truyền |
+| `pricing` | `ModelPricing` | `DEFAULT_PRICING` | Bảng giá theo model |
 
 ### 3.3 chat() — Non-Streaming
 
-```python
-async def chat(self, model, messages, tools=None, config=None) -> LLMResponse:
-    cfg = config or self._default_config
-    anthropic_messages = self._convert_messages(messages)
-    anthropic_tools = self._convert_tools(tools) if tools else NOT_GIVEN
+**Mô tả logic từng bước:**
 
-    start = time.monotonic()
-    response = await self._call_with_retry(
-        lambda: self._client.messages.create(
-            model=model,
-            messages=anthropic_messages,
-            tools=anthropic_tools,
-            system=self._extract_system(messages),
-            temperature=cfg.temperature,
-            max_tokens=cfg.max_tokens,
-        ),
-        retry_policy=cfg.retry_policy,
-    )
-    latency_ms = (time.monotonic() - start) * 1000
-
-    return LLMResponse(
-        content=self._extract_text(response),
-        tool_calls=self._extract_tool_calls(response),
-        usage=self._build_usage(response.usage, model),
-        model=response.model,
-        provider="anthropic",
-        latency_ms=latency_ms,
-        stop_reason=response.stop_reason,
-    )
-```
+1. Lấy config: sử dụng `config` nếu caller truyền, nếu không dùng `self._default_config`.
+2. Convert messages từ platform format sang Anthropic format bằng `_convert_messages`.
+3. Convert tool schemas sang Anthropic format bằng `_convert_tools` (nếu có tools), nếu không truyền `NOT_GIVEN`.
+4. Ghi nhận thời điểm bắt đầu (`time.monotonic()`).
+5. Gọi `self._call_with_retry` với lambda thực hiện `self._client.messages.create(...)`, truyền: `model`, `messages` (đã convert), `tools` (đã convert), `system` (trích từ messages), `temperature`, `max_tokens` từ config. Retry policy lấy từ config.
+6. Tính `latency_ms` = (thời gian hiện tại - thời điểm bắt đầu) * 1000.
+7. Trả về `LLMResponse` với:
+   - `content`: trích text từ response bằng `_extract_text`
+   - `tool_calls`: trích tool calls bằng `_extract_tool_calls`
+   - `usage`: build `TokenUsage` từ `response.usage` + model (để tính cost)
+   - `model`: `response.model`
+   - `provider`: `"anthropic"`
+   - `latency_ms`: đã tính ở bước 6
+   - `stop_reason`: `response.stop_reason`
 
 ### 3.4 chat_stream() — Streaming
 
-```python
-async def chat_stream(self, model, messages, tools=None, config=None):
-    cfg = config or self._default_config
-    anthropic_messages = self._convert_messages(messages)
-    anthropic_tools = self._convert_tools(tools) if tools else NOT_GIVEN
+**Mô tả logic từng bước:**
 
-    async with self._client.messages.stream(
-        model=model,
-        messages=anthropic_messages,
-        tools=anthropic_tools,
-        system=self._extract_system(messages),
-        temperature=cfg.temperature,
-        max_tokens=cfg.max_tokens,
-    ) as stream:
-        current_tool_id: str | None = None
-        current_tool_name: str | None = None
-        accumulated_args: str = ""
-
-        async for event in stream:
-            match event.type:
-                # Text streaming
-                case "content_block_delta" if hasattr(event.delta, "text"):
-                    yield LLMStreamEvent(
-                        type="text_delta",
-                        content=event.delta.text,
-                    )
-
-                # Tool call start
-                case "content_block_start" if event.content_block.type == "tool_use":
-                    current_tool_id = event.content_block.id
-                    current_tool_name = event.content_block.name
-                    accumulated_args = ""
-                    yield LLMStreamEvent(
-                        type="tool_call_start",
-                        tool_call_id=current_tool_id,
-                        tool_name=current_tool_name,
-                    )
-
-                # Tool call argument delta
-                case "content_block_delta" if hasattr(event.delta, "partial_json"):
-                    accumulated_args += event.delta.partial_json
-                    yield LLMStreamEvent(
-                        type="tool_call_delta",
-                        tool_call_id=current_tool_id,
-                        arguments_delta=event.delta.partial_json,
-                    )
-
-                # Tool call end
-                case "content_block_stop" if current_tool_id:
-                    yield LLMStreamEvent(
-                        type="tool_call_end",
-                        tool_call=ToolCall(
-                            id=current_tool_id,
-                            name=current_tool_name,
-                            arguments=json.loads(accumulated_args) if accumulated_args else {},
-                        ),
-                    )
-                    current_tool_id = None
-                    current_tool_name = None
-
-                # Message complete
-                case "message_stop":
-                    final = await stream.get_final_message()
-                    yield LLMStreamEvent(
-                        type="done",
-                        usage=self._build_usage(final.usage, model),
-                        stop_reason=final.stop_reason,
-                    )
-```
+1. Lấy config và convert messages/tools giống `chat()`.
+2. Mở streaming context bằng `self._client.messages.stream(...)` với các tham số tương tự `chat()`.
+3. Khởi tạo state theo dõi tool call đang xử lý: `current_tool_id`, `current_tool_name` (cả hai ban đầu `None`), và `accumulated_args` (chuỗi rỗng).
+4. Iterate qua từng event trong stream, xử lý theo `event.type`:
+   - **Text delta** (`content_block_delta` với `event.delta` có thuộc tính `text`): yield `LLMStreamEvent(type="text_delta", content=event.delta.text)`.
+   - **Tool call start** (`content_block_start` với `event.content_block.type == "tool_use"`): lưu `current_tool_id` và `current_tool_name` từ content block, reset `accumulated_args` thành rỗng, yield `LLMStreamEvent(type="tool_call_start", ...)`.
+   - **Tool call argument delta** (`content_block_delta` với `event.delta` có thuộc tính `partial_json`): nối `event.delta.partial_json` vào `accumulated_args`, yield `LLMStreamEvent(type="tool_call_delta", ...)`.
+   - **Tool call end** (`content_block_stop` khi `current_tool_id` có giá trị): yield `LLMStreamEvent(type="tool_call_end", tool_call=ToolCall(...))` với arguments parse từ `accumulated_args` (JSON), reset `current_tool_id` và `current_tool_name` về `None`.
+   - **Message complete** (`message_stop`): lấy final message từ stream, yield `LLMStreamEvent(type="done", usage=..., stop_reason=...)`.
 
 ### 3.5 count_tokens() — Token Estimation
 
-```python
-async def count_tokens(self, model, messages, tools=None) -> int:
-    """Sử dụng Anthropic SDK count_tokens API.
+Sử dụng Anthropic SDK `count_tokens` API để ước tính số token.
 
-    Dùng để:
-    - Context window budget check trước khi gọi LLM
-    - Summarization trigger (khi > threshold)
-    - Cost estimation
-    """
-    anthropic_messages = self._convert_messages(messages)
-    anthropic_tools = self._convert_tools(tools) if tools else NOT_GIVEN
+**Mục đích sử dụng:**
+- Context window budget check trước khi gọi LLM
+- Summarization trigger (khi vượt threshold)
+- Cost estimation
 
-    result = await self._client.messages.count_tokens(
-        model=model,
-        messages=anthropic_messages,
-        tools=anthropic_tools,
-        system=self._extract_system(messages),
-    )
-    return result.input_tokens
-```
+**Logic:**
+1. Convert messages và tools sang Anthropic format.
+2. Gọi `self._client.messages.count_tokens(...)` với `model`, `messages`, `tools`, `system` (trích từ messages).
+3. Trả về `result.input_tokens`.
 
 > **Tại sao Anthropic SDK count_tokens thay vì tiktoken?**
 > - Anthropic SDK sử dụng cùng tokenizer với model → chính xác 100%
@@ -344,54 +208,28 @@ async def count_tokens(self, model, messages, tools=None) -> int:
 
 ### 3.6 Retry Logic
 
-```python
-async def _call_with_retry(self, call_fn, retry_policy: RetryPolicy | None = None):
-    """Retry LLM calls with exponential backoff.
+Method `_call_with_retry(call_fn, retry_policy)` thực hiện retry LLM calls với exponential backoff.
 
-    Tự handle retry thay vì dùng SDK retry vì:
-    - Cần emit events cho mỗi retry (audit, cost tracking)
-    - Cần respect budget limits giữa retries
-    - Cần custom logic per error category
-    """
-    policy = retry_policy or RetryPolicy()
-    last_error = None
+**Lý do tự handle retry thay vì dùng SDK retry:**
+- Cần emit events cho mỗi retry (audit, cost tracking)
+- Cần respect budget limits giữa retries
+- Cần custom logic per error category
 
-    for attempt in range(1 + policy.max_retries):
-        try:
-            return await call_fn()
-        except anthropic.RateLimitError as e:
-            last_error = e
-            retry_after = _parse_retry_after(e)
-            wait = retry_after or _backoff(attempt, policy)
-            await asyncio.sleep(wait)
-        except anthropic.InternalServerError as e:
-            last_error = e
-            wait = _backoff(attempt, policy)
-            await asyncio.sleep(wait)
-        except anthropic.APITimeoutError as e:
-            last_error = e
-            if attempt >= policy.max_retries:
-                break
-            await asyncio.sleep(_backoff(attempt, policy))
-        except anthropic.BadRequestError:
-            raise  # no retry — malformed request
-        except anthropic.AuthenticationError:
-            raise  # no retry — invalid API key
+**Logic:**
 
-    raise last_error
+1. Lấy retry policy (dùng default `RetryPolicy()` nếu không truyền).
+2. Loop từ attempt 0 đến `1 + max_retries`:
+   - Gọi `call_fn()`. Nếu thành công, trả kết quả ngay.
+   - Nếu `RateLimitError`: parse header `Retry-After` nếu có, nếu không tính backoff. Sleep rồi retry.
+   - Nếu `InternalServerError`: tính backoff, sleep rồi retry.
+   - Nếu `APITimeoutError`: nếu đã hết số lần retry thì break, nếu chưa thì sleep backoff rồi retry.
+   - Nếu `BadRequestError`: raise ngay (malformed request, không retry).
+   - Nếu `AuthenticationError`: raise ngay (invalid API key, không retry).
+3. Nếu hết retries, raise error cuối cùng.
 
-def _backoff(attempt: int, policy: RetryPolicy) -> float:
-    wait = policy.backoff_base_seconds * (policy.backoff_multiplier ** attempt)
-    return min(wait, policy.backoff_max_seconds)
+**Hàm tính backoff:** `wait = backoff_base_seconds * (backoff_multiplier ^ attempt)`, giới hạn bởi `backoff_max_seconds`.
 
-def _parse_retry_after(error) -> float | None:
-    header = getattr(error, "response", None)
-    if header and hasattr(header, "headers"):
-        val = header.headers.get("retry-after")
-        if val:
-            return float(val)
-    return None
-```
+**Hàm parse Retry-After:** Lấy giá trị header `retry-after` từ response của error. Trả về float nếu có, `None` nếu không.
 
 ---
 
@@ -409,15 +247,14 @@ def _parse_retry_after(error) -> float | None:
 
 ### 4.1 Error Wrapping
 
-```python
-class LLMError(Exception):
-    """Base error for LLM Gateway."""
-    def __init__(self, message: str, category: ErrorCategory, retryable: bool, cause: Exception | None = None):
-        super().__init__(message)
-        self.category = category
-        self.retryable = retryable
-        self.cause = cause
-```
+`LLMError` là base exception class cho LLM Gateway.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `message` | `str` | Mô tả lỗi |
+| `category` | `ErrorCategory` | Phân loại lỗi (enum) |
+| `retryable` | `bool` | Có thể retry hay không |
+| `cause` | `Exception \| None` | Exception gốc gây ra lỗi |
 
 Executor nhận `LLMError` → xử lý theo `ErrorCategory` (xem [`01-data-models.md`](01-data-models.md) Section 9.2).
 
@@ -429,47 +266,30 @@ Executor nhận `LLMError` → xử lý theo `ErrorCategory` (xem [`01-data-mode
 
 > Hardcode trong config. Lý do: pricing ít thay đổi, cập nhật khi deploy. Tránh runtime dependency.
 
-```python
-@dataclass
-class ModelPricing:
-    input_per_million: float     # USD per 1M input tokens
-    output_per_million: float    # USD per 1M output tokens
-    cached_input_per_million: float | None = None  # prompt caching discount
+**ModelPricing** — cấu trúc lưu giá theo model:
 
-DEFAULT_PRICING: dict[str, ModelPricing] = {
-    "claude-sonnet-4-5-20250514": ModelPricing(
-        input_per_million=3.0,
-        output_per_million=15.0,
-        cached_input_per_million=0.3,
-    ),
-    "claude-haiku-4-5-20251001": ModelPricing(
-        input_per_million=0.80,
-        output_per_million=4.0,
-        cached_input_per_million=0.08,
-    ),
-}
-```
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `input_per_million` | `float` | — | USD per 1M input tokens |
+| `output_per_million` | `float` | — | USD per 1M output tokens |
+| `cached_input_per_million` | `float \| None` | `None` | Giá input tokens khi cache hit (prompt caching discount) |
+
+**DEFAULT_PRICING** — bảng giá mặc định:
+
+| Model | Input (USD/1M tokens) | Output (USD/1M tokens) | Cached Input (USD/1M tokens) |
+|-------|----------------------|----------------------|------------------------------|
+| `claude-sonnet-4-5-20250514` | 3.0 | 15.0 | 0.3 |
+| `claude-haiku-4-5-20251001` | 0.80 | 4.0 | 0.08 |
 
 ### 5.2 Cost Calculation Logic
 
-```python
-def calculate_cost(usage: TokenUsage, model: str) -> float:
-    pricing = DEFAULT_PRICING.get(model)
-    if not pricing:
-        return 0.0  # unknown model → log warning, return 0
+Hàm `calculate_cost(usage: TokenUsage, model: str) -> float` tính chi phí như sau:
 
-    input_cost = (usage.prompt_tokens / 1_000_000) * pricing.input_per_million
-    output_cost = (usage.completion_tokens / 1_000_000) * pricing.output_per_million
-
-    # Subtract cached tokens discount
-    if usage.cached_tokens and pricing.cached_input_per_million is not None:
-        cached_saving = (usage.cached_tokens / 1_000_000) * (
-            pricing.input_per_million - pricing.cached_input_per_million
-        )
-        input_cost -= cached_saving
-
-    return round(input_cost + output_cost, 6)
-```
+1. Tra bảng `DEFAULT_PRICING` theo `model`. Nếu model không có trong bảng → log warning, trả về `0.0`.
+2. Tính `input_cost` = (`prompt_tokens` / 1,000,000) * `input_per_million`.
+3. Tính `output_cost` = (`completion_tokens` / 1,000,000) * `output_per_million`.
+4. Nếu có `cached_tokens` và model hỗ trợ `cached_input_per_million`: tính `cached_saving` = (`cached_tokens` / 1,000,000) * (`input_per_million` - `cached_input_per_million`). Trừ `cached_saving` khỏi `input_cost`.
+5. Trả về `round(input_cost + output_cost, 6)`.
 
 ---
 
@@ -477,13 +297,12 @@ def calculate_cost(usage: TokenUsage, model: str) -> float:
 
 ### 6.1 Connection Pooling
 
-```python
-# httpx connection pool config
-httpx.Limits(
-    max_connections=100,       # total connections across all hosts
-    max_keepalive_connections=20,  # persistent keep-alive connections
-)
-```
+Cấu hình httpx connection pool:
+
+| Parameter | Value | Description |
+|-----------|-------|-------------|
+| `max_connections` | `100` | Total connections across all hosts |
+| `max_keepalive_connections` | `20` | Persistent keep-alive connections |
 
 - Phase 1 target: 1000 concurrent sessions → ~100 simultaneous LLM calls (execution is sequential per session)
 - `max_connections=100` đủ cho Phase 1
@@ -491,14 +310,14 @@ httpx.Limits(
 
 ### 6.2 Timeout Strategy
 
-```python
-httpx.Timeout(
-    connect=10.0,    # TCP connection timeout
-    read=120.0,      # read timeout — matches LLMConfig.timeout_seconds
-    write=10.0,      # write timeout (sending request)
-    pool=10.0,       # waiting for available connection from pool
-)
-```
+Cấu hình httpx Timeout:
+
+| Parameter | Value | Description |
+|-----------|-------|-------------|
+| `connect` | `10.0s` | TCP connection timeout |
+| `read` | `120.0s` | Read timeout — matches `LLMConfig.timeout_seconds` |
+| `write` | `10.0s` | Write timeout (sending request) |
+| `pool` | `10.0s` | Waiting for available connection from pool |
 
 **Streaming timeout:**
 - `read=120.0` áp dụng cho inter-chunk timeout (thời gian giữa 2 chunks)
@@ -517,23 +336,13 @@ httpx.Timeout(
 
 ### 7.1 Strategy
 
-```python
-async def _build_system_with_cache(self, system_prompt: str, tools: list | None) -> list[dict]:
-    """Mark system prompt và tool schemas với cache_control.
+Method `_build_system_with_cache(system_prompt, tools)` xây dựng system message với cache control.
 
-    System prompt + tool schemas thường giống nhau giữa các calls
-    trong cùng session → cache hit cao.
-    """
-    system_blocks = [
-        {
-            "type": "text",
-            "text": system_prompt,
-            "cache_control": {"type": "ephemeral"},
-        }
-    ]
-    return system_blocks
-```
+**Logic:**
+- Tạo một list chứa system text block với `cache_control: {"type": "ephemeral"}`.
+- System prompt và tool schemas thường giống nhau giữa các calls trong cùng session → cache hit cao.
 
+**Chi tiết:**
 - `cache_control: {"type": "ephemeral"}` → Anthropic cache system prompt 5 phút
 - Tool schemas cũng tự động cached bởi SDK khi truyền vào `tools` param
 - Cost saving: cached input tokens tính giá `cached_input_per_million` (90% discount)
@@ -550,67 +359,24 @@ Track `cached_tokens` trong `TokenUsage` → emit metrics:
 
 ### 8.1 Platform → Anthropic Format
 
-```python
-def _convert_messages(self, messages: list[Message]) -> list[dict]:
-    """Convert platform Message format to Anthropic API format.
+Method `_convert_messages(messages: list[Message]) -> list[dict]` chuyển đổi platform Message format sang Anthropic API format.
 
-    Platform dùng OpenAI-style message format (role + content).
-    Anthropic API có format riêng cho tool use.
-    """
-    result = []
-    for msg in messages:
-        if msg.role == "system":
-            continue  # system messages go in 'system' param, not 'messages'
+Platform dùng OpenAI-style message format (role + content). Anthropic API có format riêng cho tool use.
 
-        if msg.role == "tool":
-            # Tool result → Anthropic tool_result content block
-            result.append({
-                "role": "user",
-                "content": [{
-                    "type": "tool_result",
-                    "tool_use_id": msg.tool_call_id,
-                    "content": msg.content,
-                }],
-            })
-        elif msg.tool_calls:
-            # Assistant with tool calls
-            content = []
-            if msg.content:
-                content.append({"type": "text", "text": msg.content})
-            for tc in msg.tool_calls:
-                content.append({
-                    "type": "tool_use",
-                    "id": tc.id,
-                    "name": tc.name,
-                    "input": tc.arguments,
-                })
-            result.append({"role": "assistant", "content": content})
-        else:
-            result.append({"role": msg.role, "content": msg.content})
+**Quy tắc chuyển đổi:**
 
-    return result
-```
+| Platform Message | Anthropic Format |
+|-----------------|-----------------|
+| `role="system"` | Bỏ qua — system messages truyền riêng qua tham số `system`, không đưa vào `messages` |
+| `role="tool"` (tool result) | Chuyển thành `role="user"` với content block `type="tool_result"`, bao gồm `tool_use_id` và `content` |
+| `role="assistant"` có `tool_calls` | Chuyển thành `role="assistant"` với content là danh sách blocks: text block (nếu có content) + các tool_use blocks (mỗi block chứa `id`, `name`, `input` từ ToolCall) |
+| Các role khác (user, assistant không có tool_calls) | Giữ nguyên `role` và `content` |
 
 ### 8.2 Anthropic → Platform Format
 
-```python
-def _extract_text(self, response) -> str | None:
-    for block in response.content:
-        if block.type == "text":
-            return block.text
-    return None
+**`_extract_text(response) -> str | None`:** Duyệt qua `response.content`, tìm block có `type == "text"`, trả về `block.text`. Nếu không tìm thấy, trả về `None`.
 
-def _extract_tool_calls(self, response) -> list[ToolCall] | None:
-    calls = []
-    for block in response.content:
-        if block.type == "tool_use":
-            calls.append(ToolCall(
-                id=block.id,
-                name=block.name,
-                arguments=block.input,
-            ))
-    return calls or None
-```
+**`_extract_tool_calls(response) -> list[ToolCall] | None`:** Duyệt qua `response.content`, tìm tất cả blocks có `type == "tool_use"`, tạo `ToolCall(id=block.id, name=block.name, arguments=block.input)` cho mỗi block. Trả về list nếu có ít nhất 1 tool call, `None` nếu không có.
 
 ---
 
@@ -629,17 +395,17 @@ def _extract_tool_calls(self, response) -> list[ToolCall] | None:
 
 ### 9.2 Tracing
 
-Mỗi LLM call → 1 OpenTelemetry span:
-```python
-with tracer.start_as_current_span("llm.chat") as span:
-    span.set_attribute("llm.model", model)
-    span.set_attribute("llm.provider", "anthropic")
-    span.set_attribute("llm.prompt_tokens", usage.prompt_tokens)
-    span.set_attribute("llm.completion_tokens", usage.completion_tokens)
-    span.set_attribute("llm.cost_usd", usage.cost_usd)
-    span.set_attribute("llm.stop_reason", response.stop_reason)
-    span.set_attribute("llm.cached_tokens", usage.cached_tokens or 0)
-```
+Mỗi LLM call tạo 1 OpenTelemetry span với tên `"llm.chat"`. Các attributes được ghi nhận trên span:
+
+| Attribute | Value | Description |
+|-----------|-------|-------------|
+| `llm.model` | model name | Tên model được sử dụng |
+| `llm.provider` | `"anthropic"` | Tên provider |
+| `llm.prompt_tokens` | `usage.prompt_tokens` | Số input tokens |
+| `llm.completion_tokens` | `usage.completion_tokens` | Số output tokens |
+| `llm.cost_usd` | `usage.cost_usd` | Chi phí ước tính (USD) |
+| `llm.stop_reason` | `response.stop_reason` | Lý do dừng |
+| `llm.cached_tokens` | `usage.cached_tokens` hoặc `0` | Số tokens được cache |
 
 ---
 
@@ -658,22 +424,13 @@ with tracer.start_as_current_span("llm.chat") as span:
 
 ## 11. Phase 2 Extensibility
 
-```python
-# Phase 2: thêm provider mới bằng cách implement LLMGateway protocol
-class OpenAIGateway:
-    """LLMGateway implementation for OpenAI models."""
-    async def chat(self, model, messages, tools=None, config=None) -> LLMResponse: ...
-    async def chat_stream(self, model, messages, tools=None, config=None) -> AsyncIterator[LLMStreamEvent]: ...
-    async def count_tokens(self, model, messages, tools=None) -> int: ...
+Phase 2 mở rộng multi-provider bằng cách thêm các class implement `LLMGateway` protocol:
 
-# Router chọn gateway dựa vào model config
-class LLMRouter:
-    def __init__(self, gateways: dict[str, LLMGateway]):
-        self._gateways = gateways  # {"anthropic": AnthropicGateway, "openai": OpenAIGateway}
+**OpenAIGateway** — implement `LLMGateway` cho OpenAI models, cung cấp cùng 3 methods: `chat`, `chat_stream`, `count_tokens`.
 
-    def get_gateway(self, provider: str) -> LLMGateway:
-        return self._gateways[provider]
-```
+**LLMRouter** — router chọn gateway dựa vào provider name:
+- Constructor nhận `gateways: dict[str, LLMGateway]` — mapping từ provider name đến gateway instance (ví dụ: `{"anthropic": AnthropicGateway(...), "openai": OpenAIGateway(...)}`).
+- Method `get_gateway(provider: str) -> LLMGateway` trả về gateway tương ứng.
 
 Phase 2 scope:
 - `OpenAIGateway` adapter

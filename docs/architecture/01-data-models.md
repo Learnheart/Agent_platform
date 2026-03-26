@@ -10,62 +10,67 @@
 
 ### 1.1 Tenant
 
-```python
-class Tenant(BaseModel):
-    id: str                          # UUID
-    name: str
-    slug: str                        # URL-friendly identifier
-    config: TenantConfig
-    status: Literal["active", "suspended", "deleted"] = "active"
-    created_at: datetime
-    updated_at: datetime
-```
+**Tenant** (BaseModel)
 
-```python
-class TenantConfig(BaseModel):
-    max_agents: int = 50
-    max_concurrent_sessions: int = 100
-    max_mcp_servers: int = 20
-    daily_budget_usd: float = 100.0
-    default_model: str = "claude-sonnet-4-5-20250514"
-    features: dict[str, bool] = {}    # feature flags per tenant
-```
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| id | str | — | UUID |
+| name | str | — | Tên tenant |
+| slug | str | — | URL-friendly identifier |
+| config | TenantConfig | — | Cấu hình tenant |
+| status | Literal["active", "suspended", "deleted"] | "active" | Trạng thái tenant |
+| created_at | datetime | — | Thời điểm tạo |
+| updated_at | datetime | — | Thời điểm cập nhật |
+
+**TenantConfig** (BaseModel)
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| max_agents | int | 50 | Số agent tối đa |
+| max_concurrent_sessions | int | 100 | Số session đồng thời tối đa |
+| max_mcp_servers | int | 20 | Số MCP server tối đa |
+| daily_budget_usd | float | 100.0 | Budget hàng ngày (USD) |
+| default_model | str | "claude-sonnet-4-5-20250514" | Model mặc định |
+| features | dict[str, bool] | {} | Feature flags per tenant |
 
 ### 1.2 Agent
 
-```python
-class Agent(BaseModel):
-    id: str                          # UUID
-    tenant_id: str
-    name: str
-    description: str = ""
-    system_prompt: str
-    model_config: ModelConfig
-    execution_config: ExecutionConfig
-    memory_config: MemoryConfig
-    guardrails_config: GuardrailsConfig
-    tools_config: AgentToolsConfig
-    status: Literal["draft", "active", "archived"] = "draft"
-    created_by: str                  # user_id
-    created_at: datetime
-    updated_at: datetime
-```
+**Agent** (BaseModel)
 
-```python
-class ModelConfig(BaseModel):
-    provider: str = "anthropic"      # Phase 1: "anthropic" only
-    model: str = "claude-sonnet-4-5-20250514"
-    temperature: float = 1.0
-    max_tokens: int = 4096           # max tokens per LLM call
-    timeout_seconds: float = 120.0
-```
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| id | str | — | UUID |
+| tenant_id | str | — | ID của tenant sở hữu |
+| name | str | — | Tên agent |
+| description | str | "" | Mô tả agent |
+| system_prompt | str | — | System prompt |
+| model_config | ModelConfig | — | Cấu hình model |
+| execution_config | ExecutionConfig | — | Cấu hình execution |
+| memory_config | MemoryConfig | — | Cấu hình memory |
+| guardrails_config | GuardrailsConfig | — | Cấu hình guardrails |
+| tools_config | AgentToolsConfig | — | Cấu hình tools |
+| status | Literal["draft", "active", "archived"] | "draft" | Trạng thái agent |
+| created_by | str | — | user_id của người tạo |
+| created_at | datetime | — | Thời điểm tạo |
+| updated_at | datetime | — | Thời điểm cập nhật |
 
-```python
-class AgentToolsConfig(BaseModel):
-    mcp_server_ids: list[str] = []   # IDs of connected MCP servers
-    tool_filters: list[str] | None = None  # whitelist tool patterns, None = all
-    max_tools_per_prompt: int = 20   # max tools sent to LLM per call
-```
+**ModelConfig** (BaseModel)
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| provider | str | "anthropic" | Phase 1: "anthropic" only |
+| model | str | "claude-sonnet-4-5-20250514" | Tên model |
+| temperature | float | 1.0 | Temperature cho LLM |
+| max_tokens | int | 4096 | Max tokens per LLM call |
+| timeout_seconds | float | 120.0 | Timeout cho LLM call |
+
+**AgentToolsConfig** (BaseModel)
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| mcp_server_ids | list[str] | [] | IDs of connected MCP servers |
+| tool_filters | list[str] \| None | None | Whitelist tool patterns, None = all |
+| max_tools_per_prompt | int | 20 | Max tools sent to LLM per call |
 
 > **ExecutionConfig:** Xem Section 2.2
 > **MemoryConfig:** Đã định nghĩa chi tiết trong [`05-memory.md`](05-memory.md) Section 5
@@ -73,48 +78,51 @@ class AgentToolsConfig(BaseModel):
 
 ### 1.3 Session
 
-```python
-class Session(BaseModel):
-    id: str                          # UUID
-    tenant_id: str
-    agent_id: str
-    state: SessionState
-    step_index: int = 0
-    usage: SessionUsage
-    created_by: str                  # user_id hoặc api_key_id
-    user_type: Literal["builder", "end_user"]
-    metadata: dict = {}
-    created_at: datetime
-    updated_at: datetime
-    completed_at: datetime | None = None
-    ttl_seconds: int = 3600          # session timeout
-```
+**Session** (BaseModel)
 
-```python
-class SessionUsage(BaseModel):
-    total_tokens: int = 0
-    prompt_tokens: int = 0
-    completion_tokens: int = 0
-    total_cost_usd: float = 0.0
-    total_steps: int = 0
-    total_tool_calls: int = 0
-    total_llm_calls: int = 0
-    duration_seconds: float = 0.0
-```
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| id | str | — | UUID |
+| tenant_id | str | — | ID của tenant |
+| agent_id | str | — | ID của agent |
+| state | SessionState | — | Trạng thái session |
+| step_index | int | 0 | Bước hiện tại |
+| usage | SessionUsage | — | Thông tin sử dụng |
+| created_by | str | — | user_id hoặc api_key_id |
+| user_type | Literal["builder", "end_user"] | — | Loại user |
+| metadata | dict | {} | Metadata bổ sung |
+| created_at | datetime | — | Thời điểm tạo |
+| updated_at | datetime | — | Thời điểm cập nhật |
+| completed_at | datetime \| None | None | Thời điểm kết thúc |
+| ttl_seconds | int | 3600 | Session timeout |
+
+**SessionUsage** (BaseModel)
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| total_tokens | int | 0 | Tổng tokens đã dùng |
+| prompt_tokens | int | 0 | Tokens cho prompt |
+| completion_tokens | int | 0 | Tokens cho completion |
+| total_cost_usd | float | 0.0 | Tổng chi phí (USD) |
+| total_steps | int | 0 | Tổng số steps |
+| total_tool_calls | int | 0 | Tổng số tool calls |
+| total_llm_calls | int | 0 | Tổng số LLM calls |
+| duration_seconds | float | 0.0 | Tổng thời gian (giây) |
 
 ### 1.4 Message
 
-```python
-class Message(BaseModel):
-    id: str                          # UUID
-    session_id: str
-    role: Literal["user", "assistant", "system", "tool"]
-    content: str
-    tool_call_id: str | None = None  # for role="tool" — links to ToolCall.id
-    tool_calls: list[ToolCall] | None = None  # for role="assistant" with tool use
-    tokens: int | None = None
-    created_at: datetime
-```
+**Message** (BaseModel)
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| id | str | — | UUID |
+| session_id | str | — | ID của session |
+| role | Literal["user", "assistant", "system", "tool"] | — | Vai trò của message |
+| content | str | — | Nội dung message |
+| tool_call_id | str \| None | None | Cho role="tool" — links to ToolCall.id |
+| tool_calls | list[ToolCall] \| None | None | Cho role="assistant" with tool use |
+| tokens | int \| None | None | Số tokens |
+| created_at | datetime | — | Thời điểm tạo |
 
 ---
 
@@ -124,140 +132,129 @@ class Message(BaseModel):
 
 > Task được enqueue vào Redis Streams, executor pull và xử lý.
 
-```python
-class ExecutionTask(BaseModel):
-    id: str                          # UUID — task_id in queue
-    session_id: str
-    agent_id: str
-    tenant_id: str
-    trigger: ExecutionTrigger
-    created_at: datetime
-```
+**ExecutionTask** (BaseModel)
 
-```python
-class ExecutionTrigger(BaseModel):
-    """Lý do tạo task — xác định executor sẽ làm gì."""
-    type: Literal["new_message", "resume", "approval_response", "retry"]
-    message_id: str | None = None    # for new_message
-    approval_id: str | None = None   # for approval_response
-    retry_step_index: int | None = None  # for retry
-```
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| id | str | — | UUID — task_id in queue |
+| session_id | str | — | ID của session |
+| agent_id | str | — | ID của agent |
+| tenant_id | str | — | ID của tenant |
+| trigger | ExecutionTrigger | — | Lý do tạo task |
+| created_at | datetime | — | Thời điểm tạo |
+
+**ExecutionTrigger** (BaseModel) — Lý do tạo task — xác định executor sẽ làm gì.
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| type | Literal["new_message", "resume", "approval_response", "retry"] | — | Loại trigger |
+| message_id | str \| None | None | Cho new_message |
+| approval_id | str \| None | None | Cho approval_response |
+| retry_step_index | int \| None | None | Cho retry |
 
 ### 2.2 ExecutionConfig
 
 > Đã định nghĩa trong [`03-planning.md`](03-planning.md) Section 5. Canonical definition:
 
-```python
-class ExecutionConfig(BaseModel):
-    # Pattern
-    pattern: Literal["react"] = "react"   # Phase 2: "plan_execute", "reflexion"
+**ExecutionConfig** (BaseModel)
 
-    # Budget
-    max_steps: int = 30
-    max_tokens_budget: int = 50_000
-    max_cost_usd: float = 5.0
-    max_duration_seconds: int = 600
-    budget_warning_threshold: float = 0.8
-    budget_critical_threshold: float = 0.95
-
-    # Checkpoint
-    checkpoint_enabled: bool = True
-    checkpoint_interval: int = 1          # save delta every N steps
-    checkpoint_snapshot_interval: int = 10 # full snapshot every N steps
-
-    # ReAct
-    react_max_consecutive_tool_calls: int = 10
-
-    # Retry
-    max_retries_per_step: int = 2
-    retry_backoff_seconds: float = 1.0
-
-    # Context window
-    max_context_tokens: int = 8000
-    context_strategy: Literal[
-        "sliding_window",
-        "summarize_recent",
-        "selective",
-        "token_trim"
-    ] = "summarize_recent"
-```
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| pattern | Literal["react"] | "react" | Phase 2: "plan_execute", "reflexion" |
+| max_steps | int | 30 | Budget: số step tối đa |
+| max_tokens_budget | int | 50000 | Budget: tổng tokens tối đa |
+| max_cost_usd | float | 5.0 | Budget: chi phí tối đa (USD) |
+| max_duration_seconds | int | 600 | Budget: thời gian tối đa (giây) |
+| budget_warning_threshold | float | 0.8 | Ngưỡng cảnh báo budget |
+| budget_critical_threshold | float | 0.95 | Ngưỡng critical budget |
+| checkpoint_enabled | bool | True | Bật/tắt checkpoint |
+| checkpoint_interval | int | 1 | Save delta every N steps |
+| checkpoint_snapshot_interval | int | 10 | Full snapshot every N steps |
+| react_max_consecutive_tool_calls | int | 10 | ReAct: max tool calls liên tiếp |
+| max_retries_per_step | int | 2 | Retry: số lần retry tối đa per step |
+| retry_backoff_seconds | float | 1.0 | Retry: backoff base (giây) |
+| max_context_tokens | int | 8000 | Context window: max tokens |
+| context_strategy | Literal["sliding_window", "summarize_recent", "selective", "token_trim"] | "summarize_recent" | Context window: chiến lược quản lý context |
 
 ### 2.3 StepResult
 
 > Kết quả trả về sau mỗi step trong execution loop.
 
-```python
-class StepResult(BaseModel):
-    type: StepType
-    messages: list[Message]          # messages generated in this step
-    tool_calls: list[ToolCall] | None = None
-    tool_results: list[ToolResult] | None = None
-    metadata_updates: dict = {}      # working memory updates
-    events: list[AgentEvent] = []
-    usage: StepUsage
+**StepResult** (BaseModel)
 
-    # Type-specific fields
-    answer: str | None = None        # FINAL_ANSWER: nội dung trả lời
-    error_message: str | None = None # ERROR: mô tả lỗi
-    error_category: str | None = None # ERROR: ErrorCategory value
-    retryable: bool = False          # ERROR: có thể retry?
-    approval_id: str | None = None   # WAITING_INPUT: ID để approve/reject
-```
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| type | StepType | — | Loại step |
+| messages | list[Message] | — | Messages generated in this step |
+| tool_calls | list[ToolCall] \| None | None | Tool calls (nếu có) |
+| tool_results | list[ToolResult] \| None | None | Tool results (nếu có) |
+| metadata_updates | dict | {} | Working memory updates |
+| events | list[AgentEvent] | [] | Events emitted |
+| usage | StepUsage | — | Usage cho step này |
+| answer | str \| None | None | FINAL_ANSWER: nội dung trả lời |
+| error_message | str \| None | None | ERROR: mô tả lỗi |
+| error_category | str \| None | None | ERROR: ErrorCategory value |
+| retryable | bool | False | ERROR: có thể retry? |
+| approval_id | str \| None | None | WAITING_INPUT: ID để approve/reject |
 
-```python
-class StepUsage(BaseModel):
-    prompt_tokens: int = 0
-    completion_tokens: int = 0
-    cost_usd: float = 0.0
-    latency_ms: float = 0.0          # total step latency (excl. LLM wait)
-    llm_latency_ms: float = 0.0      # LLM call latency
-    tool_latency_ms: float = 0.0     # tool call latency (if any)
-```
+**StepUsage** (BaseModel)
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| prompt_tokens | int | 0 | Tokens cho prompt |
+| completion_tokens | int | 0 | Tokens cho completion |
+| cost_usd | float | 0.0 | Chi phí (USD) |
+| latency_ms | float | 0.0 | Total step latency (excl. LLM wait) |
+| llm_latency_ms | float | 0.0 | LLM call latency |
+| tool_latency_ms | float | 0.0 | Tool call latency (if any) |
 
 ### 2.4 ContextPayload
 
 > Payload được build bởi MemoryManager, truyền vào ExecutionEngine.
 
-```python
-class ContextPayload(BaseModel):
-    """Context window assembled for LLM call.
+**ContextPayload** (BaseModel) — Context window assembled for LLM call.
 
-    Layer order (top → bottom, as injected into messages):
-    1. System prompt (from agent config)
-    2. Canary token (security marker)
-    3. Long-term memory results (Phase 2 — RAG)
-    4. Working memory (plan, scratchpad)
-    5. Episodic memory (Phase 3 — past episodes)
-    6. Budget warning (if approaching limit)
-    7. Conversation summary (if strategy = summarize_recent)
-    8. Recent messages (last N messages)
-    """
-    system_prompt: str               # Layer 1 — rendered system prompt
-    messages: list[Message]          # Layers 2-8 assembled as message list
-    tool_schemas: list[dict]         # tool definitions for LLM (provider-specific format)
-    total_tokens_estimate: int       # estimated token count
-    has_summary: bool = False        # whether conversation was summarized
-    budget_warning: str | None = None # injected budget warning (Layer 6)
-```
+Layer order (top -> bottom, as injected into messages):
+1. System prompt (from agent config)
+2. Canary token (security marker)
+3. Long-term memory results (Phase 2 — RAG)
+4. Working memory (plan, scratchpad)
+5. Episodic memory (Phase 3 — past episodes)
+6. Budget warning (if approaching limit)
+7. Conversation summary (if strategy = summarize_recent)
+8. Recent messages (last N messages)
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| system_prompt | str | — | Layer 1 — rendered system prompt |
+| messages | list[Message] | — | Layers 2-8 assembled as message list |
+| tool_schemas | list[dict] | — | Tool definitions for LLM (provider-specific format) |
+| total_tokens_estimate | int | — | Estimated token count |
+| has_summary | bool | False | Whether conversation was summarized |
+| budget_warning | str \| None | None | Injected budget warning (Layer 6) |
 
 ### 2.5 BudgetCheckResult
 
 > Đã định nghĩa trong [`03-planning.md`](03-planning.md) Section 2.7.
 
-```python
-class BudgetCheckResult(BaseModel):
-    exhausted: bool                  # budget completely used → force stop
-    warning: bool                    # approaching limit (> warning_threshold)
-    critical: bool                   # near limit (> critical_threshold)
-    warning_message: str = ""        # message to inject into context
-    checks: list[BudgetCheck] = []
+**BudgetCheckResult** (BaseModel)
 
-class BudgetCheck(BaseModel):
-    type: Literal["tokens", "cost", "steps", "time"]
-    current: float                   # current usage
-    limit: float                     # configured limit
-    ratio: float                     # current / limit (0.0 - 1.0)
-```
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| exhausted | bool | — | Budget completely used — force stop |
+| warning | bool | — | Approaching limit (> warning_threshold) |
+| critical | bool | — | Near limit (> critical_threshold) |
+| warning_message | str | "" | Message to inject into context |
+| checks | list[BudgetCheck] | [] | Danh sách budget checks |
+
+**BudgetCheck** (BaseModel)
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| type | Literal["tokens", "cost", "steps", "time"] | — | Loại budget check |
+| current | float | — | Current usage |
+| limit | float | — | Configured limit |
+| ratio | float | — | current / limit (0.0 - 1.0) |
 
 ---
 
@@ -267,28 +264,30 @@ class BudgetCheck(BaseModel):
 
 ### 3.1 CheckpointDelta
 
-```python
-class CheckpointDelta(BaseModel):
-    session_id: str
-    step_index: int
-    new_messages: list[Message]
-    tool_results: list[ToolResult] | None = None
-    metadata_updates: dict = {}
-    token_usage_delta: StepUsage
-    timestamp: datetime
-```
+**CheckpointDelta** (BaseModel)
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| session_id | str | — | ID của session |
+| step_index | int | — | Index của step |
+| new_messages | list[Message] | — | Messages mới trong step |
+| tool_results | list[ToolResult] \| None | None | Tool results (nếu có) |
+| metadata_updates | dict | {} | Metadata updates |
+| token_usage_delta | StepUsage | — | Token usage cho step này |
+| timestamp | datetime | — | Thời điểm tạo |
 
 ### 3.2 CheckpointSnapshot
 
-```python
-class CheckpointSnapshot(BaseModel):
-    session_id: str
-    step_index: int
-    state: bytes                     # serialized full Session state
-    conversation_hash: str           # integrity check
-    usage: SessionUsage              # cumulative usage at this point
-    timestamp: datetime
-```
+**CheckpointSnapshot** (BaseModel)
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| session_id | str | — | ID của session |
+| step_index | int | — | Index của step |
+| state | bytes | — | Serialized full Session state |
+| conversation_hash | str | — | Integrity check |
+| usage | SessionUsage | — | Cumulative usage at this point |
+| timestamp | datetime | — | Thời điểm tạo |
 
 ---
 
@@ -296,29 +295,31 @@ class CheckpointSnapshot(BaseModel):
 
 ### 4.1 ToolCall
 
-```python
-class ToolCall(BaseModel):
-    id: str                          # tool_use block ID from LLM
-    name: str                        # tool name (e.g., "mcp:github:create_issue")
-    arguments: dict                  # tool input arguments
-```
+**ToolCall** (BaseModel)
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| id | str | — | tool_use block ID from LLM |
+| name | str | — | Tool name (e.g., "mcp:github:create_issue") |
+| arguments | dict | — | Tool input arguments |
 
 > **ToolInfo, MCPServerConfig:** Đã định nghĩa chi tiết trong [`06-mcp-tools.md`](06-mcp-tools.md) Section 2.1-2.2
 > **ToolResult:** Đã định nghĩa chi tiết trong [`06-mcp-tools.md`](06-mcp-tools.md) Section 2.2.6
 
 ### 4.2 ToolResult (Canonical)
 
-```python
-class ToolResult(BaseModel):
-    tool_call_id: str                # matches ToolCall.id
-    tool_name: str
-    content: str                     # normalized text content
-    is_error: bool = False
-    metadata: dict = {}              # latency_ms, server_id, truncated, etc.
-    artifacts: list[str] | None = None  # refs to large stored artifacts
-    cost_usd: float | None = None
-    latency_ms: float = 0.0
-```
+**ToolResult** (BaseModel)
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| tool_call_id | str | — | Matches ToolCall.id |
+| tool_name | str | — | Tên tool |
+| content | str | — | Normalized text content |
+| is_error | bool | False | Có phải lỗi không |
+| metadata | dict | {} | latency_ms, server_id, truncated, etc. |
+| artifacts | list[str] \| None | None | Refs to large stored artifacts |
+| cost_usd | float \| None | None | Chi phí (USD) |
+| latency_ms | float | 0.0 | Thời gian thực thi (ms) |
 
 ---
 
@@ -328,53 +329,59 @@ class ToolResult(BaseModel):
 
 ### 5.1 LLMResponse
 
-```python
-class LLMResponse(BaseModel):
-    content: str | None              # text response (None if only tool_calls)
-    tool_calls: list[ToolCall] | None
-    usage: TokenUsage
-    model: str
-    provider: str
-    latency_ms: float
-    stop_reason: str                 # "end_turn", "tool_use", "max_tokens", "stop_sequence"
-```
+**LLMResponse** (BaseModel)
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| content | str \| None | — | Text response (None if only tool_calls) |
+| tool_calls | list[ToolCall] \| None | — | Tool calls (nếu có) |
+| usage | TokenUsage | — | Token usage |
+| model | str | — | Tên model |
+| provider | str | — | Tên provider |
+| latency_ms | float | — | Thời gian phản hồi (ms) |
+| stop_reason | str | — | "end_turn", "tool_use", "max_tokens", "stop_sequence" |
 
 ### 5.2 TokenUsage
 
-```python
-class TokenUsage(BaseModel):
-    prompt_tokens: int
-    completion_tokens: int
-    total_tokens: int
-    cached_tokens: int | None = None
-    cost_usd: float | None = None
-```
+**TokenUsage** (BaseModel)
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| prompt_tokens | int | — | Tokens cho prompt |
+| completion_tokens | int | — | Tokens cho completion |
+| total_tokens | int | — | Tổng tokens |
+| cached_tokens | int \| None | None | Cached tokens (nếu có) |
+| cost_usd | float \| None | None | Chi phí (USD) |
 
 ### 5.3 LLMStreamEvent
 
 > Events emitted during SSE streaming from LLM Gateway.
 
-```python
-class LLMStreamEvent(BaseModel):
-    type: Literal[
-        "text_delta",       # partial text content
-        "tool_call_start",  # tool call begins (name + partial args)
-        "tool_call_delta",  # partial tool call arguments
-        "tool_call_end",    # tool call complete
-        "usage",            # token usage summary
-        "done",             # stream complete
-        "error",            # stream error
-    ]
-    # Type-specific fields
-    content: str | None = None       # text_delta: partial text
-    tool_call: ToolCall | None = None  # tool_call_end: completed call
-    tool_call_id: str | None = None  # tool_call_start/delta
-    tool_name: str | None = None     # tool_call_start
-    arguments_delta: str | None = None  # tool_call_delta: partial JSON
-    usage: TokenUsage | None = None  # usage/done
-    stop_reason: str | None = None   # done
-    error_message: str | None = None # error
-```
+**LLMStreamEvent** (BaseModel)
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| type | Literal["text_delta", "tool_call_start", "tool_call_delta", "tool_call_end", "usage", "done", "error"] | — | Loại event (xem bảng chi tiết bên dưới) |
+| content | str \| None | None | text_delta: partial text |
+| tool_call | ToolCall \| None | None | tool_call_end: completed call |
+| tool_call_id | str \| None | None | tool_call_start/delta |
+| tool_name | str \| None | None | tool_call_start |
+| arguments_delta | str \| None | None | tool_call_delta: partial JSON |
+| usage | TokenUsage \| None | None | usage/done |
+| stop_reason | str \| None | None | done |
+| error_message | str \| None | None | error |
+
+**LLMStreamEvent type values:**
+
+| Value | Description |
+|-------|-------------|
+| text_delta | Partial text content |
+| tool_call_start | Tool call begins (name + partial args) |
+| tool_call_delta | Partial tool call arguments |
+| tool_call_end | Tool call complete |
+| usage | Token usage summary |
+| done | Stream complete |
+| error | Stream error |
 
 ---
 
@@ -384,51 +391,40 @@ class LLMStreamEvent(BaseModel):
 
 > Events emitted bởi Executor qua Event Bus. Consumers: SSE Streamer, OTel Exporter, Governance Module, Webhook Notifier. Xem [`00-overview.md`](00-overview.md) Section 5.6.
 
-```python
-class AgentEvent(BaseModel):
-    id: str                          # UUID
-    type: AgentEventType
-    session_id: str
-    tenant_id: str
-    agent_id: str
-    step_index: int | None = None
-    timestamp: datetime
-    data: dict                       # type-specific payload (see below)
-```
+**AgentEvent** (BaseModel)
 
-```python
-class AgentEventType(str, Enum):
-    # Session lifecycle
-    SESSION_CREATED = "session_created"
-    SESSION_COMPLETED = "session_completed"
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| id | str | — | UUID |
+| type | AgentEventType | — | Loại event |
+| session_id | str | — | ID của session |
+| tenant_id | str | — | ID của tenant |
+| agent_id | str | — | ID của agent |
+| step_index | int \| None | None | Index của step (nếu có) |
+| timestamp | datetime | — | Thời điểm phát event |
+| data | dict | — | Type-specific payload (xem Section 6.2) |
 
-    # Step lifecycle
-    STEP_START = "step_start"
+**AgentEventType** (str, Enum)
 
-    # LLM
-    LLM_CALL_START = "llm_call_start"
-    LLM_CALL_END = "llm_call_end"
-    THOUGHT = "thought"
-
-    # Tool
-    TOOL_CALL = "tool_call"
-    TOOL_RESULT = "tool_result"
-
-    # Guardrail
-    GUARDRAIL_CHECK = "guardrail_check"
-    APPROVAL_REQUESTED = "approval_requested"
-
-    # System
-    CHECKPOINT = "checkpoint"
-    BUDGET_WARNING = "budget_warning"
-    FINAL_ANSWER = "final_answer"
-    ERROR = "error"
-
-    # Phase 2
-    PLAN_CREATED = "plan_created"
-    PLAN_STEP_END = "plan_step_end"
-    REPLAN = "replan"
-```
+| Value | Description |
+|-------|-------------|
+| session_created | Session lifecycle: session đã được tạo |
+| session_completed | Session lifecycle: session đã kết thúc |
+| step_start | Step lifecycle: bắt đầu step |
+| llm_call_start | LLM: bắt đầu gọi LLM |
+| llm_call_end | LLM: kết thúc gọi LLM |
+| thought | LLM: reasoning/thinking content |
+| tool_call | Tool: gọi tool |
+| tool_result | Tool: kết quả tool |
+| guardrail_check | Guardrail: kiểm tra guardrail |
+| approval_requested | Guardrail: yêu cầu approval (HITL) |
+| checkpoint | System: checkpoint đã lưu |
+| budget_warning | System: cảnh báo budget |
+| final_answer | System: câu trả lời cuối cùng |
+| error | System: lỗi |
+| plan_created | Phase 2: plan đã được tạo |
+| plan_step_end | Phase 2: kết thúc plan step |
+| replan | Phase 2: replan |
 
 ### 6.2 Event Data Payloads
 
@@ -455,25 +451,27 @@ class AgentEventType(str, Enum):
 
 ### 7.1 SessionState
 
-```python
-class SessionState(str, Enum):
-    CREATED = "created"
-    RUNNING = "running"
-    PAUSED = "paused"
-    WAITING_INPUT = "waiting_input"
-    COMPLETED = "completed"
-    FAILED = "failed"
-```
+**SessionState** (str, Enum)
+
+| Value | Description |
+|-------|-------------|
+| created | Session đã tạo, chưa chạy |
+| running | Session đang chạy |
+| paused | Session tạm dừng |
+| waiting_input | Đang chờ input từ user (HITL) |
+| completed | Session đã hoàn thành |
+| failed | Session thất bại |
 
 ### 7.2 StepType
 
-```python
-class StepType(str, Enum):
-    FINAL_ANSWER = "final_answer"    # LLM returned text-only response (no tool calls)
-    TOOL_CALL = "tool_call"          # LLM requested tool use → continue loop
-    WAITING_INPUT = "waiting_input"  # HITL approval required → pause session
-    ERROR = "error"                  # step failed
-```
+**StepType** (str, Enum)
+
+| Value | Description |
+|-------|-------------|
+| final_answer | LLM returned text-only response (no tool calls) |
+| tool_call | LLM requested tool use — continue loop |
+| waiting_input | HITL approval required — pause session |
+| error | Step failed |
 
 > **ReAct Termination Logic:** LLM trả về response với `stop_reason="end_turn"` và KHÔNG có `tool_calls` → `StepType.FINAL_ANSWER`. Nếu response có `tool_calls` → `StepType.TOOL_CALL`.
 
@@ -481,42 +479,45 @@ class StepType(str, Enum):
 
 > Đã định nghĩa trong [`03-planning.md`](03-planning.md) Section 4.1.
 
-```python
-class ErrorCategory(str, Enum):
-    LLM_RATE_LIMIT = "llm_rate_limit"
-    LLM_SERVER_ERROR = "llm_server_error"
-    LLM_CONTENT_REFUSAL = "llm_content_refusal"
-    LLM_MALFORMED_RESPONSE = "llm_malformed_response"
-    LLM_TIMEOUT = "llm_timeout"
-    TOOL_TIMEOUT = "tool_timeout"
-    TOOL_AUTH_FAILURE = "tool_auth_failure"
-    TOOL_EXECUTION_ERROR = "tool_execution_error"
-    CHECKPOINT_WRITE_FAIL = "checkpoint_write_fail"
-    BUDGET_EXCEEDED = "budget_exceeded"
-    EXECUTOR_CRASH = "executor_crash"
-```
+**ErrorCategory** (str, Enum)
+
+| Value | Description |
+|-------|-------------|
+| llm_rate_limit | LLM rate limit exceeded |
+| llm_server_error | LLM server error |
+| llm_content_refusal | LLM từ chối nội dung |
+| llm_malformed_response | LLM response không hợp lệ |
+| llm_timeout | LLM call timeout |
+| tool_timeout | Tool call timeout |
+| tool_auth_failure | Tool authentication failure |
+| tool_execution_error | Tool execution error |
+| checkpoint_write_fail | Checkpoint write failure |
+| budget_exceeded | Budget đã vượt giới hạn |
+| executor_crash | Executor crash |
 
 ### 7.4 DataSensitivity
 
 > Đã định nghĩa trong [`09-governance.md`](09-governance.md) Section 4.3.1.
 
-```python
-class DataSensitivity(str, Enum):
-    PUBLIC = "public"
-    INTERNAL = "internal"
-    CONFIDENTIAL = "confidential"
-    RESTRICTED = "restricted"        # PII, credentials, regulated data
-```
+**DataSensitivity** (str, Enum)
+
+| Value | Description |
+|-------|-------------|
+| public | Dữ liệu công khai |
+| internal | Dữ liệu nội bộ |
+| confidential | Dữ liệu bảo mật |
+| restricted | PII, credentials, regulated data |
 
 ### 7.5 RiskLevel
 
-```python
-class RiskLevel(str, Enum):
-    LOW = "low"
-    MEDIUM = "medium"
-    HIGH = "high"
-    CRITICAL = "critical"
-```
+**RiskLevel** (str, Enum)
+
+| Value | Description |
+|-------|-------------|
+| low | Rủi ro thấp |
+| medium | Rủi ro trung bình |
+| high | Rủi ro cao |
+| critical | Rủi ro nghiêm trọng |
 
 ---
 
@@ -579,15 +580,16 @@ Tất cả transitions không có trong bảng trên đều bị từ chối. Đ
 
 ### 9.1 Error Response Model
 
-```python
-class PlatformError(BaseModel):
-    code: str                        # machine-readable error code
-    message: str                     # human-readable message
-    category: ErrorCategory | None = None
-    details: dict = {}               # structured error details
-    retryable: bool = False
-    trace_id: str | None = None      # OpenTelemetry trace ID
-```
+**PlatformError** (BaseModel)
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| code | str | — | Machine-readable error code |
+| message | str | — | Human-readable message |
+| category | ErrorCategory \| None | None | Error category |
+| details | dict | {} | Structured error details |
+| retryable | bool | False | Có thể retry không |
+| trace_id | str \| None | None | OpenTelemetry trace ID |
 
 ### 9.2 Retry Policy Defaults
 
@@ -607,13 +609,14 @@ class PlatformError(BaseModel):
 | `BUDGET_EXCEEDED` | 0 | — | — | — |
 | `EXECUTOR_CRASH` | — | — | — | — |
 
-```python
-class RetryPolicy(BaseModel):
-    max_retries: int
-    backoff_base_seconds: float = 1.0
-    backoff_multiplier: float = 2.0
-    backoff_max_seconds: float = 30.0
-```
+**RetryPolicy** (BaseModel)
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| max_retries | int | — | Số lần retry tối đa |
+| backoff_base_seconds | float | 1.0 | Backoff base (giây) |
+| backoff_multiplier | float | 2.0 | Backoff multiplier |
+| backoff_max_seconds | float | 30.0 | Backoff max (giây) |
 
 ### 9.3 API Error Codes
 
@@ -645,371 +648,285 @@ class RetryPolicy(BaseModel):
 
 ### 10.1 tenants
 
-```sql
-CREATE TABLE tenants (
-    id          TEXT PRIMARY KEY,
-    name        TEXT NOT NULL,
-    slug        TEXT NOT NULL UNIQUE,
-    config      JSONB NOT NULL DEFAULT '{}',
-    status      TEXT NOT NULL DEFAULT 'active'
-                CHECK (status IN ('active', 'suspended', 'deleted')),
-    created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-```
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | TEXT | PRIMARY KEY | UUID của tenant |
+| name | TEXT | NOT NULL | Tên tenant |
+| slug | TEXT | NOT NULL, UNIQUE | URL-friendly identifier |
+| config | JSONB | NOT NULL, DEFAULT '{}' | Cấu hình tenant (TenantConfig) |
+| status | TEXT | NOT NULL, DEFAULT 'active', CHECK IN ('active', 'suspended', 'deleted') | Trạng thái tenant |
+| created_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | Thời điểm tạo |
+| updated_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | Thời điểm cập nhật |
 
 ### 10.2 agents
 
-```sql
-CREATE TABLE agents (
-    id                TEXT NOT NULL,
-    tenant_id         TEXT NOT NULL REFERENCES tenants(id),
-    name              TEXT NOT NULL,
-    description       TEXT DEFAULT '',
-    system_prompt     TEXT NOT NULL,
-    model_config      JSONB NOT NULL,      -- ModelConfig
-    execution_config  JSONB NOT NULL,      -- ExecutionConfig
-    memory_config     JSONB NOT NULL,      -- MemoryConfig
-    guardrails_config JSONB NOT NULL,      -- GuardrailsConfig
-    tools_config      JSONB NOT NULL,      -- AgentToolsConfig
-    status            TEXT NOT NULL DEFAULT 'draft'
-                      CHECK (status IN ('draft', 'active', 'archived')),
-    created_by        TEXT NOT NULL,
-    created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | TEXT | NOT NULL (part of composite PK) | UUID của agent |
+| tenant_id | TEXT | NOT NULL, FK -> tenants(id) (part of composite PK) | ID của tenant |
+| name | TEXT | NOT NULL | Tên agent |
+| description | TEXT | DEFAULT '' | Mô tả agent |
+| system_prompt | TEXT | NOT NULL | System prompt |
+| model_config | JSONB | NOT NULL | ModelConfig |
+| execution_config | JSONB | NOT NULL | ExecutionConfig |
+| memory_config | JSONB | NOT NULL | MemoryConfig |
+| guardrails_config | JSONB | NOT NULL | GuardrailsConfig |
+| tools_config | JSONB | NOT NULL | AgentToolsConfig |
+| status | TEXT | NOT NULL, DEFAULT 'draft', CHECK IN ('draft', 'active', 'archived') | Trạng thái agent |
+| created_by | TEXT | NOT NULL | user_id của người tạo |
+| created_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | Thời điểm tạo |
+| updated_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | Thời điểm cập nhật |
 
-    PRIMARY KEY (tenant_id, id)
-);
-
-ALTER TABLE agents ENABLE ROW LEVEL SECURITY;
-CREATE POLICY tenant_isolation ON agents
-    USING (tenant_id = current_setting('app.current_tenant'));
-
-CREATE INDEX idx_agents_tenant_status ON agents (tenant_id, status);
-```
+- **Primary Key:** (tenant_id, id)
+- **RLS:** Enabled, policy `tenant_isolation` — `USING (tenant_id = current_setting('app.current_tenant'))`
+- **Index:** `idx_agents_tenant_status` ON (tenant_id, status)
 
 ### 10.3 sessions
 
-```sql
-CREATE TABLE sessions (
-    id              TEXT NOT NULL,
-    tenant_id       TEXT NOT NULL,
-    agent_id        TEXT NOT NULL,
-    state           TEXT NOT NULL DEFAULT 'created'
-                    CHECK (state IN (
-                        'created', 'running', 'paused',
-                        'waiting_input', 'completed', 'failed'
-                    )),
-    step_index      INT NOT NULL DEFAULT 0,
-    usage           JSONB NOT NULL DEFAULT '{}',   -- SessionUsage
-    created_by      TEXT NOT NULL,
-    user_type       TEXT NOT NULL DEFAULT 'builder'
-                    CHECK (user_type IN ('builder', 'end_user')),
-    metadata        JSONB NOT NULL DEFAULT '{}',
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    completed_at    TIMESTAMPTZ,
-    ttl_seconds     INT NOT NULL DEFAULT 3600,
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | TEXT | NOT NULL (part of composite PK) | UUID của session |
+| tenant_id | TEXT | NOT NULL (part of composite PK) | ID của tenant |
+| agent_id | TEXT | NOT NULL | ID của agent |
+| state | TEXT | NOT NULL, DEFAULT 'created', CHECK IN ('created', 'running', 'paused', 'waiting_input', 'completed', 'failed') | Trạng thái session |
+| step_index | INT | NOT NULL, DEFAULT 0 | Bước hiện tại |
+| usage | JSONB | NOT NULL, DEFAULT '{}' | SessionUsage |
+| created_by | TEXT | NOT NULL | user_id hoặc api_key_id |
+| user_type | TEXT | NOT NULL, DEFAULT 'builder', CHECK IN ('builder', 'end_user') | Loại user |
+| metadata | JSONB | NOT NULL, DEFAULT '{}' | Metadata bổ sung |
+| created_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | Thời điểm tạo |
+| updated_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | Thời điểm cập nhật |
+| completed_at | TIMESTAMPTZ | (nullable) | Thời điểm kết thúc |
+| ttl_seconds | INT | NOT NULL, DEFAULT 3600 | Session timeout |
 
-    PRIMARY KEY (tenant_id, id),
-    CONSTRAINT fk_agent FOREIGN KEY (tenant_id, agent_id)
-        REFERENCES agents(tenant_id, id)
-);
-
-ALTER TABLE sessions ENABLE ROW LEVEL SECURITY;
-CREATE POLICY tenant_isolation ON sessions
-    USING (tenant_id = current_setting('app.current_tenant'));
-
-CREATE INDEX idx_sessions_agent ON sessions (tenant_id, agent_id, state);
-CREATE INDEX idx_sessions_state ON sessions (tenant_id, state, created_at DESC);
-CREATE INDEX idx_sessions_created ON sessions (tenant_id, created_at DESC);
-```
+- **Primary Key:** (tenant_id, id)
+- **Foreign Key:** `fk_agent` — (tenant_id, agent_id) REFERENCES agents(tenant_id, id)
+- **RLS:** Enabled, policy `tenant_isolation` — `USING (tenant_id = current_setting('app.current_tenant'))`
+- **Indexes:**
+  - `idx_sessions_agent` ON (tenant_id, agent_id, state)
+  - `idx_sessions_state` ON (tenant_id, state, created_at DESC)
+  - `idx_sessions_created` ON (tenant_id, created_at DESC)
 
 ### 10.4 messages
 
 > Conversation history durable storage. Hot copy cũng lưu trong Redis.
 
-```sql
-CREATE TABLE messages (
-    id              TEXT NOT NULL,
-    tenant_id       TEXT NOT NULL,
-    session_id      TEXT NOT NULL,
-    role            TEXT NOT NULL
-                    CHECK (role IN ('user', 'assistant', 'system', 'tool')),
-    content         TEXT NOT NULL,
-    tool_call_id    TEXT,
-    tool_calls      JSONB,             -- list[ToolCall] as JSON
-    tokens          INT,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | TEXT | NOT NULL (part of composite PK) | UUID của message |
+| tenant_id | TEXT | NOT NULL (part of composite PK) | ID của tenant |
+| session_id | TEXT | NOT NULL (part of composite PK) | ID của session |
+| role | TEXT | NOT NULL, CHECK IN ('user', 'assistant', 'system', 'tool') | Vai trò của message |
+| content | TEXT | NOT NULL | Nội dung message |
+| tool_call_id | TEXT | (nullable) | ID liên kết với ToolCall |
+| tool_calls | JSONB | (nullable) | list[ToolCall] as JSON |
+| tokens | INT | (nullable) | Số tokens |
+| created_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | Thời điểm tạo |
 
-    PRIMARY KEY (tenant_id, session_id, id),
-    CONSTRAINT fk_session FOREIGN KEY (tenant_id, session_id)
-        REFERENCES sessions(tenant_id, id) ON DELETE CASCADE
-);
-
-ALTER TABLE messages ENABLE ROW LEVEL SECURITY;
-CREATE POLICY tenant_isolation ON messages
-    USING (tenant_id = current_setting('app.current_tenant'));
-
-CREATE INDEX idx_messages_session ON messages (tenant_id, session_id, created_at);
-```
+- **Primary Key:** (tenant_id, session_id, id)
+- **Foreign Key:** `fk_session` — (tenant_id, session_id) REFERENCES sessions(tenant_id, id) ON DELETE CASCADE
+- **RLS:** Enabled, policy `tenant_isolation` — `USING (tenant_id = current_setting('app.current_tenant'))`
+- **Index:** `idx_messages_session` ON (tenant_id, session_id, created_at)
 
 ### 10.5 checkpoints_deltas
 
-```sql
-CREATE TABLE checkpoints_deltas (
-    session_id      TEXT NOT NULL,
-    tenant_id       TEXT NOT NULL,
-    step_index      INT NOT NULL,
-    new_messages    JSONB NOT NULL DEFAULT '[]',
-    tool_results    JSONB,
-    metadata_updates JSONB NOT NULL DEFAULT '{}',
-    usage_delta     JSONB NOT NULL DEFAULT '{}',  -- StepUsage
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| session_id | TEXT | NOT NULL (part of composite PK) | ID của session |
+| tenant_id | TEXT | NOT NULL (part of composite PK) | ID của tenant |
+| step_index | INT | NOT NULL (part of composite PK) | Index của step |
+| new_messages | JSONB | NOT NULL, DEFAULT '[]' | Messages mới trong step |
+| tool_results | JSONB | (nullable) | Tool results |
+| metadata_updates | JSONB | NOT NULL, DEFAULT '{}' | Metadata updates |
+| usage_delta | JSONB | NOT NULL, DEFAULT '{}' | StepUsage |
+| created_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | Thời điểm tạo |
 
-    PRIMARY KEY (tenant_id, session_id, step_index),
-    CONSTRAINT fk_session FOREIGN KEY (tenant_id, session_id)
-        REFERENCES sessions(tenant_id, id) ON DELETE CASCADE
-);
-
-ALTER TABLE checkpoints_deltas ENABLE ROW LEVEL SECURITY;
-CREATE POLICY tenant_isolation ON checkpoints_deltas
-    USING (tenant_id = current_setting('app.current_tenant'));
-```
+- **Primary Key:** (tenant_id, session_id, step_index)
+- **Foreign Key:** `fk_session` — (tenant_id, session_id) REFERENCES sessions(tenant_id, id) ON DELETE CASCADE
+- **RLS:** Enabled, policy `tenant_isolation` — `USING (tenant_id = current_setting('app.current_tenant'))`
 
 ### 10.6 checkpoints_snapshots
 
-```sql
-CREATE TABLE checkpoints_snapshots (
-    session_id          TEXT NOT NULL,
-    tenant_id           TEXT NOT NULL,
-    step_index          INT NOT NULL,
-    state               BYTEA NOT NULL,       -- serialized Session
-    conversation_hash   TEXT NOT NULL,
-    usage               JSONB NOT NULL DEFAULT '{}',  -- SessionUsage
-    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| session_id | TEXT | NOT NULL (part of composite PK) | ID của session |
+| tenant_id | TEXT | NOT NULL (part of composite PK) | ID của tenant |
+| step_index | INT | NOT NULL (part of composite PK) | Index của step |
+| state | BYTEA | NOT NULL | Serialized Session |
+| conversation_hash | TEXT | NOT NULL | Integrity check |
+| usage | JSONB | NOT NULL, DEFAULT '{}' | SessionUsage |
+| created_at | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | Thời điểm tạo |
 
-    PRIMARY KEY (tenant_id, session_id, step_index),
-    CONSTRAINT fk_session FOREIGN KEY (tenant_id, session_id)
-        REFERENCES sessions(tenant_id, id) ON DELETE CASCADE
-);
-
-ALTER TABLE checkpoints_snapshots ENABLE ROW LEVEL SECURITY;
-CREATE POLICY tenant_isolation ON checkpoints_snapshots
-    USING (tenant_id = current_setting('app.current_tenant'));
-```
+- **Primary Key:** (tenant_id, session_id, step_index)
+- **Foreign Key:** `fk_session` — (tenant_id, session_id) REFERENCES sessions(tenant_id, id) ON DELETE CASCADE
+- **RLS:** Enabled, policy `tenant_isolation` — `USING (tenant_id = current_setting('app.current_tenant'))`
 
 ### 10.7 tools
 
 > Đã định nghĩa trong [`06-mcp-tools.md`](06-mcp-tools.md) Section 2.1.1. Xem doc gốc cho full DDL.
 
-```sql
-CREATE TABLE tools (
-    id                  TEXT NOT NULL,
-    tenant_id           TEXT NOT NULL,
-    server_id           TEXT NOT NULL,
-    name                TEXT NOT NULL,
-    namespace           TEXT NOT NULL,
-    description         TEXT NOT NULL,
-    input_schema        JSONB NOT NULL,
-    output_schema       JSONB,
-    execution_mode      TEXT DEFAULT 'sync',
-    default_timeout_ms  INT DEFAULT 30000,
-    estimated_latency_ms INT,
-    estimated_cost      FLOAT,
-    idempotent          BOOLEAN DEFAULT FALSE,
-    permission_scope    TEXT[] DEFAULT '{}',
-    risk_level          TEXT DEFAULT 'low',
-    requires_approval   BOOLEAN DEFAULT FALSE,
-    visibility          TEXT DEFAULT 'tenant',
-    discovered_at       TIMESTAMPTZ DEFAULT NOW(),
-    last_verified_at    TIMESTAMPTZ DEFAULT NOW(),
-    status              TEXT DEFAULT 'active',
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | TEXT | NOT NULL (part of composite PK) | UUID của tool |
+| tenant_id | TEXT | NOT NULL (part of composite PK) | ID của tenant |
+| server_id | TEXT | NOT NULL | ID của MCP server |
+| name | TEXT | NOT NULL | Tên tool |
+| namespace | TEXT | NOT NULL | Namespace |
+| description | TEXT | NOT NULL | Mô tả tool |
+| input_schema | JSONB | NOT NULL | JSON Schema cho input |
+| output_schema | JSONB | (nullable) | JSON Schema cho output |
+| execution_mode | TEXT | DEFAULT 'sync' | Chế độ thực thi |
+| default_timeout_ms | INT | DEFAULT 30000 | Timeout mặc định (ms) |
+| estimated_latency_ms | INT | (nullable) | Latency ước tính (ms) |
+| estimated_cost | FLOAT | (nullable) | Chi phí ước tính |
+| idempotent | BOOLEAN | DEFAULT FALSE | Tool có idempotent không |
+| permission_scope | TEXT[] | DEFAULT '{}' | Permission scopes |
+| risk_level | TEXT | DEFAULT 'low' | Mức rủi ro |
+| requires_approval | BOOLEAN | DEFAULT FALSE | Cần approval không |
+| visibility | TEXT | DEFAULT 'tenant' | Phạm vi hiển thị |
+| discovered_at | TIMESTAMPTZ | DEFAULT NOW() | Thời điểm phát hiện |
+| last_verified_at | TIMESTAMPTZ | DEFAULT NOW() | Thời điểm verify cuối |
+| status | TEXT | DEFAULT 'active' | Trạng thái tool |
 
-    PRIMARY KEY (tenant_id, id),
-    CONSTRAINT fk_server FOREIGN KEY (tenant_id, server_id)
-        REFERENCES mcp_servers(tenant_id, id)
-);
-
-ALTER TABLE tools ENABLE ROW LEVEL SECURITY;
-CREATE POLICY tenant_isolation ON tools
-    USING (tenant_id = current_setting('app.current_tenant'));
-
-CREATE INDEX idx_tools_namespace ON tools (tenant_id, namespace);
-```
+- **Primary Key:** (tenant_id, id)
+- **Foreign Key:** `fk_server` — (tenant_id, server_id) REFERENCES mcp_servers(tenant_id, id)
+- **RLS:** Enabled, policy `tenant_isolation` — `USING (tenant_id = current_setting('app.current_tenant'))`
+- **Index:** `idx_tools_namespace` ON (tenant_id, namespace)
 
 ### 10.8 mcp_servers
 
 > Đã định nghĩa trong [`06-mcp-tools.md`](06-mcp-tools.md) Section 2.2.2. Xem doc gốc cho full DDL.
 
-```sql
-CREATE TABLE mcp_servers (
-    id                          TEXT NOT NULL,
-    tenant_id                   TEXT NOT NULL REFERENCES tenants(id),
-    name                        TEXT NOT NULL,
-    description                 TEXT,
-    transport                   TEXT NOT NULL
-                                CHECK (transport IN ('stdio', 'sse', 'streamable_http')),
-    command                     TEXT,
-    args                        JSONB,
-    env_encrypted               BYTEA,
-    url                         TEXT,
-    headers_encrypted           BYTEA,
-    connect_timeout_ms          INT DEFAULT 10000,
-    request_timeout_ms          INT DEFAULT 30000,
-    max_retries                 INT DEFAULT 3,
-    auto_start                  BOOLEAN DEFAULT TRUE,
-    health_check_interval_seconds INT DEFAULT 60,
-    allowed_tools               TEXT[],
-    blocked_tools               TEXT[],
-    sandbox_level               TEXT DEFAULT 'none',
-    status                      TEXT DEFAULT 'disconnected',
-    last_connected_at           TIMESTAMPTZ,
-    last_error                  TEXT,
-    created_at                  TIMESTAMPTZ DEFAULT NOW(),
-    updated_at                  TIMESTAMPTZ DEFAULT NOW(),
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | TEXT | NOT NULL (part of composite PK) | UUID của MCP server |
+| tenant_id | TEXT | NOT NULL, FK -> tenants(id) (part of composite PK) | ID của tenant |
+| name | TEXT | NOT NULL | Tên server |
+| description | TEXT | (nullable) | Mô tả server |
+| transport | TEXT | NOT NULL, CHECK IN ('stdio', 'sse', 'streamable_http') | Loại transport |
+| command | TEXT | (nullable) | Command (cho stdio) |
+| args | JSONB | (nullable) | Arguments (cho stdio) |
+| env_encrypted | BYTEA | (nullable) | Environment variables (encrypted) |
+| url | TEXT | (nullable) | URL (cho sse/streamable_http) |
+| headers_encrypted | BYTEA | (nullable) | Headers (encrypted) |
+| connect_timeout_ms | INT | DEFAULT 10000 | Connection timeout (ms) |
+| request_timeout_ms | INT | DEFAULT 30000 | Request timeout (ms) |
+| max_retries | INT | DEFAULT 3 | Số lần retry tối đa |
+| auto_start | BOOLEAN | DEFAULT TRUE | Tự động start |
+| health_check_interval_seconds | INT | DEFAULT 60 | Khoảng cách health check (giây) |
+| allowed_tools | TEXT[] | (nullable) | Whitelist tools |
+| blocked_tools | TEXT[] | (nullable) | Blacklist tools |
+| sandbox_level | TEXT | DEFAULT 'none' | Mức sandbox |
+| status | TEXT | DEFAULT 'disconnected' | Trạng thái kết nối |
+| last_connected_at | TIMESTAMPTZ | (nullable) | Thời điểm kết nối cuối |
+| last_error | TEXT | (nullable) | Lỗi cuối cùng |
+| created_at | TIMESTAMPTZ | DEFAULT NOW() | Thời điểm tạo |
+| updated_at | TIMESTAMPTZ | DEFAULT NOW() | Thời điểm cập nhật |
 
-    PRIMARY KEY (tenant_id, id)
-);
-
-ALTER TABLE mcp_servers ENABLE ROW LEVEL SECURITY;
-CREATE POLICY tenant_isolation ON mcp_servers
-    USING (tenant_id = current_setting('app.current_tenant'));
-```
+- **Primary Key:** (tenant_id, id)
+- **RLS:** Enabled, policy `tenant_isolation` — `USING (tenant_id = current_setting('app.current_tenant'))`
 
 ### 10.9 audit_events
 
 > Đã định nghĩa trong [`09-governance.md`](09-governance.md) Section 4.1.3. Partitioned by month, append-only.
 
-```sql
-CREATE TABLE audit_events (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    timestamp       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    tenant_id       TEXT NOT NULL,
-    agent_id        TEXT,
-    session_id      TEXT,
-    step_index      INT,
-    category        TEXT NOT NULL,
-    action          TEXT NOT NULL,
-    actor_type      TEXT NOT NULL,
-    actor_id        TEXT NOT NULL,
-    actor_ip        INET,
-    resource_type   TEXT,
-    resource_id     TEXT,
-    details         JSONB NOT NULL DEFAULT '{}',
-    sensitivity     TEXT NOT NULL DEFAULT 'internal',
-    outcome         TEXT NOT NULL,
-    created_date    DATE GENERATED ALWAYS AS (DATE(timestamp)) STORED
-) PARTITION BY RANGE (created_date);
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | UUID | PRIMARY KEY, DEFAULT gen_random_uuid() | UUID của event |
+| timestamp | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | Thời điểm event |
+| tenant_id | TEXT | NOT NULL | ID của tenant |
+| agent_id | TEXT | (nullable) | ID của agent |
+| session_id | TEXT | (nullable) | ID của session |
+| step_index | INT | (nullable) | Index của step |
+| category | TEXT | NOT NULL | Category of audit event |
+| action | TEXT | NOT NULL | Action performed |
+| actor_type | TEXT | NOT NULL | Loại actor |
+| actor_id | TEXT | NOT NULL | ID của actor |
+| actor_ip | INET | (nullable) | IP address của actor |
+| resource_type | TEXT | (nullable) | Loại resource |
+| resource_id | TEXT | (nullable) | ID của resource |
+| details | JSONB | NOT NULL, DEFAULT '{}' | Chi tiết event |
+| sensitivity | TEXT | NOT NULL, DEFAULT 'internal' | Mức độ nhạy cảm |
+| outcome | TEXT | NOT NULL | Kết quả |
+| created_date | DATE | GENERATED ALWAYS AS (DATE(timestamp)) STORED | Ngày tạo (partition key) |
 
--- Append-only constraint
-CREATE OR REPLACE FUNCTION prevent_audit_mutation()
-RETURNS TRIGGER AS $$
-BEGIN
-    RAISE EXCEPTION 'audit_events is append-only: UPDATE and DELETE are not allowed';
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE TRIGGER audit_immutable
-    BEFORE UPDATE OR DELETE ON audit_events
-    FOR EACH ROW EXECUTE FUNCTION prevent_audit_mutation();
-
-ALTER TABLE audit_events ENABLE ROW LEVEL SECURITY;
-CREATE POLICY tenant_isolation ON audit_events
-    USING (tenant_id = current_setting('app.current_tenant'));
-
-CREATE INDEX idx_audit_tenant_time ON audit_events (tenant_id, timestamp DESC);
-CREATE INDEX idx_audit_session ON audit_events (session_id, timestamp);
-CREATE INDEX idx_audit_category ON audit_events (category, timestamp DESC);
-CREATE INDEX idx_audit_outcome ON audit_events (outcome, timestamp DESC)
-    WHERE outcome != 'success';
-```
+- **Partitioning:** PARTITION BY RANGE (created_date)
+- **Append-only constraint:** Trigger `audit_immutable` chạy function `prevent_audit_mutation()` BEFORE UPDATE OR DELETE, raise exception "audit_events is append-only: UPDATE and DELETE are not allowed"
+- **RLS:** Enabled, policy `tenant_isolation` — `USING (tenant_id = current_setting('app.current_tenant'))`
+- **Indexes:**
+  - `idx_audit_tenant_time` ON (tenant_id, timestamp DESC)
+  - `idx_audit_session` ON (session_id, timestamp)
+  - `idx_audit_category` ON (category, timestamp DESC)
+  - `idx_audit_outcome` ON (outcome, timestamp DESC) WHERE outcome != 'success'
 
 ### 10.10 cost_events
 
 > Đã định nghĩa trong [`09-governance.md`](09-governance.md) Section 4.4.
 
-```sql
-CREATE TABLE cost_events (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    timestamp       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    tenant_id       TEXT NOT NULL,
-    agent_id        TEXT NOT NULL,
-    session_id      TEXT NOT NULL,
-    step_index      INT NOT NULL,
-    event_type      TEXT NOT NULL
-                    CHECK (event_type IN ('llm_call', 'tool_call', 'embedding')),
-    provider        TEXT,
-    model           TEXT,
-    input_tokens    INT,
-    output_tokens   INT,
-    tool_name       TEXT,
-    cost_usd        NUMERIC(10, 6) NOT NULL
-);
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | UUID | PRIMARY KEY, DEFAULT gen_random_uuid() | UUID của event |
+| timestamp | TIMESTAMPTZ | NOT NULL, DEFAULT NOW() | Thời điểm event |
+| tenant_id | TEXT | NOT NULL | ID của tenant |
+| agent_id | TEXT | NOT NULL | ID của agent |
+| session_id | TEXT | NOT NULL | ID của session |
+| step_index | INT | NOT NULL | Index của step |
+| event_type | TEXT | NOT NULL, CHECK IN ('llm_call', 'tool_call', 'embedding') | Loại cost event |
+| provider | TEXT | (nullable) | Provider name |
+| model | TEXT | (nullable) | Model name |
+| input_tokens | INT | (nullable) | Số input tokens |
+| output_tokens | INT | (nullable) | Số output tokens |
+| tool_name | TEXT | (nullable) | Tên tool |
+| cost_usd | NUMERIC(10, 6) | NOT NULL | Chi phí (USD) |
 
-ALTER TABLE cost_events ENABLE ROW LEVEL SECURITY;
-CREATE POLICY tenant_isolation ON cost_events
-    USING (tenant_id = current_setting('app.current_tenant'));
-
-CREATE INDEX idx_cost_session ON cost_events (session_id, timestamp);
-CREATE INDEX idx_cost_tenant_time ON cost_events (tenant_id, timestamp DESC);
-```
+- **RLS:** Enabled, policy `tenant_isolation` — `USING (tenant_id = current_setting('app.current_tenant'))`
+- **Indexes:**
+  - `idx_cost_session` ON (session_id, timestamp)
+  - `idx_cost_tenant_time` ON (tenant_id, timestamp DESC)
 
 ### 10.11 cost_daily_aggregates
 
-```sql
-CREATE TABLE cost_daily_aggregates (
-    date                DATE NOT NULL,
-    tenant_id           TEXT NOT NULL,
-    agent_id            TEXT,
-    provider            TEXT,
-    model               TEXT,
-    total_cost_usd      NUMERIC(12, 6),
-    total_llm_calls     INT,
-    total_tool_calls    INT,
-    total_input_tokens  BIGINT,
-    total_output_tokens BIGINT,
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| date | DATE | NOT NULL (part of composite PK) | Ngày |
+| tenant_id | TEXT | NOT NULL (part of composite PK) | ID của tenant |
+| agent_id | TEXT | (part of composite PK) | ID của agent |
+| provider | TEXT | (part of composite PK) | Provider name |
+| model | TEXT | (part of composite PK) | Model name |
+| total_cost_usd | NUMERIC(12, 6) | (nullable) | Tổng chi phí (USD) |
+| total_llm_calls | INT | (nullable) | Tổng số LLM calls |
+| total_tool_calls | INT | (nullable) | Tổng số tool calls |
+| total_input_tokens | BIGINT | (nullable) | Tổng input tokens |
+| total_output_tokens | BIGINT | (nullable) | Tổng output tokens |
 
-    PRIMARY KEY (date, tenant_id, agent_id, provider, model)
-);
-```
+- **Primary Key:** (date, tenant_id, agent_id, provider, model)
 
 ### 10.12 memories
 
 > Phase 2. Đã định nghĩa trong [`05-memory.md`](05-memory.md) Section 3.4.
 
-```sql
-CREATE TABLE memories (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id       TEXT NOT NULL,
-    agent_id        TEXT NOT NULL,
-    namespace       TEXT NOT NULL DEFAULT 'default',
-    content         TEXT NOT NULL,
-    content_type    TEXT DEFAULT 'text'
-                    CHECK (content_type IN ('text', 'structured', 'code')),
-    embedding       VECTOR(1536) NOT NULL,
-    metadata        JSONB DEFAULT '{}',
-    source          TEXT,
-    tags            TEXT[] DEFAULT '{}',
-    created_at      TIMESTAMPTZ DEFAULT NOW(),
-    updated_at      TIMESTAMPTZ DEFAULT NOW(),
-    expires_at      TIMESTAMPTZ,
-    access_count    INT DEFAULT 0,
-    last_accessed_at TIMESTAMPTZ,
+| Column | Type | Constraints | Description |
+|--------|------|-------------|-------------|
+| id | UUID | PRIMARY KEY, DEFAULT gen_random_uuid() | UUID của memory |
+| tenant_id | TEXT | NOT NULL, FK -> tenants(id) | ID của tenant |
+| agent_id | TEXT | NOT NULL | ID của agent |
+| namespace | TEXT | NOT NULL, DEFAULT 'default' | Namespace |
+| content | TEXT | NOT NULL | Nội dung memory |
+| content_type | TEXT | DEFAULT 'text', CHECK IN ('text', 'structured', 'code') | Loại content |
+| embedding | VECTOR(1536) | NOT NULL | Vector embedding |
+| metadata | JSONB | DEFAULT '{}' | Metadata bổ sung |
+| source | TEXT | (nullable) | Nguồn gốc |
+| tags | TEXT[] | DEFAULT '{}' | Tags |
+| created_at | TIMESTAMPTZ | DEFAULT NOW() | Thời điểm tạo |
+| updated_at | TIMESTAMPTZ | DEFAULT NOW() | Thời điểm cập nhật |
+| expires_at | TIMESTAMPTZ | (nullable) | Thời điểm hết hạn |
+| access_count | INT | DEFAULT 0 | Số lần truy cập |
+| last_accessed_at | TIMESTAMPTZ | (nullable) | Thời điểm truy cập cuối |
 
-    CONSTRAINT fk_tenant FOREIGN KEY (tenant_id) REFERENCES tenants(id)
-);
-
-ALTER TABLE memories ENABLE ROW LEVEL SECURITY;
-CREATE POLICY tenant_isolation ON memories
-    USING (tenant_id = current_setting('app.current_tenant'));
-
-CREATE INDEX idx_memories_embedding ON memories
-    USING hnsw (embedding vector_cosine_ops)
-    WITH (m = 16, ef_construction = 64);
-
-CREATE INDEX idx_memories_scope ON memories (tenant_id, agent_id, namespace);
-```
+- **RLS:** Enabled, policy `tenant_isolation` — `USING (tenant_id = current_setting('app.current_tenant'))`
+- **Indexes:**
+  - `idx_memories_embedding` ON embedding USING hnsw (vector_cosine_ops) WITH (m = 16, ef_construction = 64)
+  - `idx_memories_scope` ON (tenant_id, agent_id, namespace)
 
 ### 10.13 Entity Relationship Diagram
 

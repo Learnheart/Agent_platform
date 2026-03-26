@@ -81,110 +81,65 @@
 
 ### 2.1 Agent Executor (Orchestrator)
 
-```python
-class AgentExecutor:
-    """
-    Main orchestrator. Stateless — loads state at start, persists at end.
-    Runs as async worker consuming from task queue.
-    """
+**Class: AgentExecutor** — Main orchestrator. Stateless: loads state at start, persists at end. Runs as async worker consuming from task queue.
 
-    def __init__(
-        self,
-        llm_gateway: LLMGateway,
-        tool_runtime: ToolRuntime,
-        memory_manager: MemoryManager,
-        checkpoint_manager: CheckpointManager,
-        budget_controller: BudgetController,
-        event_emitter: EventEmitter,
-        guardrails: GuardrailsEngine,
-    ): ...
+**Dependencies (constructor):**
 
-    async def execute(self, task: ExecutionTask) -> ExecutionResult:
-        """
-        1. Load session state from checkpoint
-        2. Select engine based on agent_config.pattern
-        3. Run engine.step() in a loop until:
-           a. Engine returns final_answer
-           b. Budget exhausted (graceful stop)
-           c. Error (retry or fail)
-           d. HITL gate triggered (pause, re-enqueue later)
-        4. Persist state after each step
-        5. Emit events for tracing + streaming
-        """
-```
+| Parameter | Type | Mô tả |
+|-----------|------|--------|
+| llm_gateway | LLMGateway | Gateway giao tiếp với các LLM provider |
+| tool_runtime | ToolRuntime | Runtime thực thi tool qua MCP |
+| memory_manager | MemoryManager | Quản lý memory (short-term, long-term, working) |
+| checkpoint_manager | CheckpointManager | Quản lý checkpoint (delta + snapshot) |
+| budget_controller | BudgetController | Kiểm tra budget (token, cost, step, time) |
+| event_emitter | EventEmitter | Phát event cho tracing + streaming |
+| guardrails | GuardrailsEngine | Engine kiểm tra guardrails |
+
+**Method: execute(task: ExecutionTask) -> ExecutionResult**
+
+Thực thi một task theo các bước:
+
+1. Load session state from checkpoint
+2. Select engine based on agent_config.pattern
+3. Run engine.step() in a loop until:
+   - a. Engine returns final_answer
+   - b. Budget exhausted (graceful stop)
+   - c. Error (retry or fail)
+   - d. HITL gate triggered (pause, re-enqueue later)
+4. Persist state after each step
+5. Emit events for tracing + streaming
 
 **Task Lifecycle:**
 
-```python
-async def execute(self, task: ExecutionTask) -> ExecutionResult:
-    # 1. Load state
-    session = await self.checkpoint_manager.restore(task.session_id)
-    if session is None:
-        session = Session.create(task)
+Chi tiết flow của method `execute`:
 
-    engine = self._select_engine(session.agent_config.execution_pattern)
-
-    # 2. Execution loop
-    while True:
-        # Pre-step checks
-        budget_result = await self.budget_controller.check(session)
-        if budget_result.exhausted:
-            return await self._graceful_stop(session, budget_result)
-
-        # Build context
-        context = await self.memory_manager.build_context(
-            session_id=session.id,
-            agent_config=session.agent_config,
-        )
-
-        # Inject budget warning if approaching limit
-        if budget_result.warning:
-            context.inject_system_message(budget_result.warning_message)
-
-        # Execute one step
-        step_result = await engine.step(session, context)
-
-        # Post-step processing
-        await self.memory_manager.update(session.id, step_result.messages)
-        await self.checkpoint_manager.save_delta(session, step_result)
-        await self.event_emitter.emit(step_result.events)
-
-        # Check result type
-        match step_result.type:
-            case StepType.FINAL_ANSWER:
-                session.state = SessionState.COMPLETED
-                break
-            case StepType.TOOL_CALL:
-                continue
-            case StepType.WAITING_INPUT:
-                session.state = SessionState.WAITING_INPUT
-                break
-            case StepType.ERROR:
-                if step_result.retryable and session.retry_count < max_retries:
-                    session.retry_count += 1
-                    continue
-                else:
-                    session.state = SessionState.FAILED
-                    break
-
-    await self.checkpoint_manager.save_snapshot(session)
-    return ExecutionResult(session=session)
-```
+1. **Load state**: Gọi `checkpoint_manager.restore(task.session_id)`. Nếu trả về `None`, tạo session mới bằng `Session.create(task)`.
+2. **Select engine**: Chọn engine phù hợp dựa trên `session.agent_config.execution_pattern`.
+3. **Execution loop** — lặp liên tục:
+   - **Pre-step checks**: Gọi `budget_controller.check(session)`. Nếu `budget_result.exhausted`, thực hiện graceful stop và trả về kết quả.
+   - **Build context**: Gọi `memory_manager.build_context(session_id, agent_config)`.
+   - **Inject budget warning**: Nếu `budget_result.warning`, inject system message cảnh báo vào context.
+   - **Execute one step**: Gọi `engine.step(session, context)` để thực hiện một bước reasoning.
+   - **Post-step processing**:
+     - Gọi `memory_manager.update(session.id, step_result.messages)` để cập nhật memory.
+     - Gọi `checkpoint_manager.save_delta(session, step_result)` để lưu checkpoint.
+     - Gọi `event_emitter.emit(step_result.events)` để phát event.
+   - **Check result type** (sử dụng pattern matching):
+     - `StepType.FINAL_ANSWER`: Đặt `session.state = SessionState.COMPLETED`, break.
+     - `StepType.TOOL_CALL`: Continue (tiếp tục loop).
+     - `StepType.WAITING_INPUT`: Đặt `session.state = SessionState.WAITING_INPUT`, break.
+     - `StepType.ERROR`: Nếu retryable và chưa hết max retries, tăng retry_count và continue. Ngược lại, đặt `session.state = SessionState.FAILED`, break.
+4. **Finalize**: Gọi `checkpoint_manager.save_snapshot(session)`, trả về `ExecutionResult(session=session)`.
 
 ---
 
 ### 2.2 Internal Engine Abstraction
 
-```python
-class ExecutionEngine(Protocol):
-    """Internal interface separating orchestration from reasoning.
-    NOT a public API — internal boundary for clean architecture."""
+**Protocol: ExecutionEngine** — Internal interface separating orchestration from reasoning. NOT a public API — internal boundary for clean architecture.
 
-    async def step(self, session: Session, context: ContextPayload) -> StepResult:
-        """Execute one reasoning step. Platform handles orchestration
-        (checkpoint, budget, events). Engine handles reasoning logic."""
-        ...
-```
+**Method: step(session: Session, context: ContextPayload) -> StepResult**
+
+Execute one reasoning step. Platform handles orchestration (checkpoint, budget, events). Engine handles reasoning logic.
 
 ---
 
@@ -206,56 +161,29 @@ class ExecutionEngine(Protocol):
 └──────────────────────────────────────────────────────┘
 ```
 
-```python
-class ReActEngine:
-    async def step(self, session: Session, context: ContextPayload) -> StepResult:
-        """
-        1. Call LLM with current context (messages + tools)
-        2. Parse response:
-           - If text only -> final_answer
-           - If tool_use -> validate via guardrails -> execute -> return observation
-           - If error -> return retryable error
-        3. Append assistant message + tool result to session history
-        """
+**Class: ReActEngine**
 
-        # 1. LLM call
-        llm_response = await self.llm_gateway.chat(
-            provider=session.agent_config.model_config.provider,
-            model=session.agent_config.model_config.model,
-            messages=context.messages,
-            tools=context.tool_schemas,
-            config=session.agent_config.model_config,
-        )
+**Method: step(session: Session, context: ContextPayload) -> StepResult**
 
-        # 2. Parse & execute
-        if llm_response.tool_calls:
-            results = []
-            for tool_call in llm_response.tool_calls:
-                # Guardrail check
-                permission = await self.guardrails.check_tool_call(tool_call, session)
-                if permission.denied:
-                    results.append(ToolResult(error=permission.reason))
-                    continue
-                if permission.requires_approval:
-                    return StepResult(type=StepType.WAITING_INPUT, ...)
+Thực hiện một bước reasoning theo mô hình ReAct:
 
-                # Execute tool
-                result = await self.tool_runtime.invoke(tool_call)
-                results.append(result)
+1. **LLM call**: Gọi `llm_gateway.chat()` với các tham số:
+   - `provider`: từ `session.agent_config.model_config.provider`
+   - `model`: từ `session.agent_config.model_config.model`
+   - `messages`: từ `context.messages`
+   - `tools`: từ `context.tool_schemas`
+   - `config`: từ `session.agent_config.model_config`
 
-            return StepResult(
-                type=StepType.TOOL_CALL,
-                messages=[llm_response.message, *tool_result_messages(results)],
-                events=[...],
-            )
-        else:
-            return StepResult(
-                type=StepType.FINAL_ANSWER,
-                messages=[llm_response.message],
-                answer=llm_response.content,
-                events=[...],
-            )
-```
+2. **Parse & execute**: Kiểm tra response từ LLM:
+   - **Nếu có tool_calls**: Duyệt qua từng tool call:
+     - Gọi `guardrails.check_tool_call(tool_call, session)` để kiểm tra quyền.
+     - Nếu `permission.denied`: trả về `ToolResult(error=permission.reason)`, skip tool call.
+     - Nếu `permission.requires_approval`: trả về `StepResult(type=StepType.WAITING_INPUT, ...)`.
+     - Nếu được phép: gọi `tool_runtime.invoke(tool_call)` để thực thi tool.
+     - Trả về `StepResult(type=StepType.TOOL_CALL, messages=[llm_response.message, *tool_result_messages(results)], events=[...])`.
+   - **Nếu chỉ có text (không có tool call)**: Trả về `StepResult(type=StepType.FINAL_ANSWER, messages=[llm_response.message], answer=llm_response.content, events=[...])`.
+
+3. **Append**: Thêm assistant message + tool result vào session history.
 
 ---
 
@@ -296,61 +224,60 @@ class ReActEngine:
 
 **Data Model:**
 
-```python
-@dataclass
-class Plan:
-    id: str
-    session_id: str
-    version: int
-    goal: str
-    steps: list[PlanStep]
-    status: Literal["planning", "executing", "replanning", "completed", "failed"]
-    created_at: datetime
-    updated_at: datetime
+**Plan:**
 
-@dataclass
-class PlanStep:
-    id: int
-    task: str
-    dependencies: list[int]
-    status: Literal["pending", "running", "completed", "failed", "skipped"]
-    result: str | None
-    error: str | None
-    retries: int = 0
-    max_retries: int = 2
-    started_at: datetime | None = None
-    completed_at: datetime | None = None
-```
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| id | str | — | ID duy nhất của plan |
+| session_id | str | — | ID của session chứa plan |
+| version | int | — | Phiên bản plan (tăng khi replan) |
+| goal | str | — | Mục tiêu tổng thể của plan |
+| steps | list[PlanStep] | — | Danh sách các bước cần thực hiện |
+| status | Literal["planning", "executing", "replanning", "completed", "failed"] | — | Trạng thái hiện tại của plan |
+| created_at | datetime | — | Thời điểm tạo plan |
+| updated_at | datetime | — | Thời điểm cập nhật gần nhất |
+
+**PlanStep:**
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| id | int | — | ID của step trong plan |
+| task | str | — | Mô tả công việc cần thực hiện |
+| dependencies | list[int] | — | Danh sách ID các step phải hoàn thành trước |
+| status | Literal["pending", "running", "completed", "failed", "skipped"] | — | Trạng thái của step |
+| result | str \| None | — | Kết quả khi step hoàn thành |
+| error | str \| None | — | Thông tin lỗi nếu step thất bại |
+| retries | int | 0 | Số lần đã retry |
+| max_retries | int | 2 | Số lần retry tối đa |
+| started_at | datetime \| None | None | Thời điểm bắt đầu |
+| completed_at | datetime \| None | None | Thời điểm hoàn thành |
 
 **Interface:**
 
-```python
-class PlanExecuteEngine:
-    async def step(self, session: Session, context: ContextPayload) -> StepResult:
-        plan = await self.working_memory.get_plan(session.id)
+**Class: PlanExecuteEngine**
 
-        if plan is None:
-            return await self._create_plan(session, context)
+**Method: step(session: Session, context: ContextPayload) -> StepResult**
 
-        if plan.status == "replanning":
-            return await self._replan(session, context, plan)
+Logic chính của method `step`:
 
-        next_step = self._get_next_executable_step(plan)
+1. Lấy plan hiện tại từ working memory qua `working_memory.get_plan(session.id)`.
+2. **Nếu chưa có plan** (`plan is None`): Gọi `_create_plan(session, context)` để tạo plan mới.
+3. **Nếu plan đang ở trạng thái "replanning"**: Gọi `_replan(session, context, plan)`.
+4. **Tìm step tiếp theo có thể thực thi** qua `_get_next_executable_step(plan)`:
+   - Nếu không tìm thấy step nào (`next_step is None`):
+     - Nếu tất cả step đã completed: gọi `_synthesize(session, context, plan)` để tổng hợp kết quả.
+     - Ngược lại: gọi `_handle_blocked(session, plan)` để xử lý trường hợp bị block.
+   - Nếu có step: gọi `_execute_step(session, context, plan, next_step)`.
 
-        if next_step is None:
-            if self._all_steps_completed(plan):
-                return await self._synthesize(session, context, plan)
-            else:
-                return await self._handle_blocked(session, plan)
+**Các private method:**
 
-        return await self._execute_step(session, context, plan, next_step)
-
-    async def _create_plan(self, session, context) -> StepResult: ...
-    async def _execute_step(self, session, context, plan, step) -> StepResult: ...
-    async def _should_replan(self, plan, step_result) -> bool: ...
-    async def _replan(self, session, context, plan) -> StepResult: ...
-    async def _synthesize(self, session, context, plan) -> StepResult: ...
-```
+| Method | Parameters | Return | Mô tả |
+|--------|-----------|--------|--------|
+| _create_plan | session, context | StepResult | Tạo plan mới từ goal bằng LLM |
+| _execute_step | session, context, plan, step | StepResult | Thực thi một step (mini ReAct loop) |
+| _should_replan | plan, step_result | bool | Quyết định có cần replan không |
+| _replan | session, context, plan | StepResult | Tạo phiên bản plan mới bằng LLM |
+| _synthesize | session, context, plan | StepResult | Tổng hợp kết quả từ tất cả steps thành final answer |
 
 ---
 
@@ -379,29 +306,23 @@ class PlanExecuteEngine:
 └───────────────────────────────────────────────────────┘
 ```
 
-```python
-class ReflexionEngine:
-    async def step(self, session: Session, context: ContextPayload) -> StepResult:
-        attempt = session.metadata.get("reflexion_attempt", 0)
-        max_attempts = session.agent_config.execution_config.get("max_reflexion_attempts", 3)
+**Class: ReflexionEngine**
 
-        if attempt >= max_attempts:
-            return StepResult(type=StepType.FINAL_ANSWER, answer="Best attempt result...")
+**Method: step(session: Session, context: ContextPayload) -> StepResult**
 
-        result = await self.react_engine.step(session, context)
-        evaluation = await self._evaluate(result, session.agent_config.evaluation_config)
+Logic thực thi:
 
-        if evaluation.passed:
-            return result
-
-        reflection = await self._reflect(result, evaluation, context)
-
-        session.metadata["reflexion_attempt"] = attempt + 1
-        context.inject_system_message(f"Previous attempt evaluation: {evaluation.feedback}\n"
-                                       f"Reflection: {reflection}")
-
-        return StepResult(type=StepType.TOOL_CALL, ...)
-```
+1. Lấy số lần attempt hiện tại từ `session.metadata.get("reflexion_attempt", 0)`.
+2. Lấy giới hạn max attempts từ `session.agent_config.execution_config.get("max_reflexion_attempts", 3)`.
+3. **Nếu đã đạt max attempts**: Trả về `StepResult(type=StepType.FINAL_ANSWER, answer="Best attempt result...")`.
+4. **Thực hiện attempt**: Gọi `react_engine.step(session, context)` để chạy một ReAct loop.
+5. **Đánh giá kết quả**: Gọi `_evaluate(result, session.agent_config.evaluation_config)`.
+6. **Nếu evaluation passed**: Trả về result (thành công).
+7. **Nếu evaluation failed**:
+   - Gọi `_reflect(result, evaluation, context)` để LLM phân tích nguyên nhân thất bại.
+   - Tăng `session.metadata["reflexion_attempt"]` lên 1.
+   - Inject vào context message: "Previous attempt evaluation: {evaluation.feedback}\nReflection: {reflection}".
+   - Trả về `StepResult(type=StepType.TOOL_CALL, ...)` để tiếp tục loop.
 
 ---
 
@@ -431,231 +352,146 @@ class ReflexionEngine:
                           Next step or done
 ```
 
-```python
-@dataclass
-class CheckpointDelta:
-    session_id: str
-    step_index: int
-    new_messages: list[Message]
-    tool_results: list[ToolResult]
-    metadata_updates: dict
-    token_usage_delta: TokenUsage
-    timestamp: datetime
+**Data Model: CheckpointDelta**
 
-@dataclass
-class CheckpointSnapshot:
-    session_id: str
-    step_index: int
-    state: bytes                        # Full serialized session
-    conversation_hash: str
-    token_usage: TokenUsage
-    timestamp: datetime
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| session_id | str | — | ID của session |
+| step_index | int | — | Thứ tự step hiện tại |
+| new_messages | list[Message] | — | Các message mới từ step vừa thực hiện |
+| tool_results | list[ToolResult] | — | Kết quả tool call từ step vừa thực hiện |
+| metadata_updates | dict | — | Các thay đổi metadata |
+| token_usage_delta | TokenUsage | — | Lượng token sử dụng trong step này |
+| timestamp | datetime | — | Thời điểm tạo delta |
 
-class CheckpointManager:
-    """
-    Delta-based checkpoint. Lưu delta sau mỗi step,
-    full snapshot mỗi N steps hoặc khi session kết thúc.
-    """
+**Data Model: CheckpointSnapshot**
 
-    def __init__(self, redis, pg, snapshot_interval: int = 10):
-        self.snapshot_interval = snapshot_interval
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| session_id | str | — | ID của session |
+| step_index | int | — | Thứ tự step tại thời điểm snapshot |
+| state | bytes | — | Full serialized session |
+| conversation_hash | str | — | Hash của conversation để detect changes |
+| token_usage | TokenUsage | — | Tổng token usage tại thời điểm snapshot |
+| timestamp | datetime | — | Thời điểm tạo snapshot |
 
-    async def save_delta(self, session: Session, step_result: StepResult) -> None:
-        """
-        1. Serialize chỉ new messages + tool results từ step vừa xong
-        2. Append delta vào Redis list
-        3. Async append vào PostgreSQL
-        4. Nếu step_index % snapshot_interval == 0 -> save_snapshot()
-        """
-        delta = CheckpointDelta(
-            session_id=session.id,
-            step_index=session.step_index,
-            new_messages=step_result.messages,
-            tool_results=step_result.tool_results,
-            metadata_updates=step_result.metadata_updates,
-            token_usage_delta=step_result.token_usage,
-            timestamp=utcnow(),
-        )
+**Class: CheckpointManager** — Delta-based checkpoint. Lưu delta sau mỗi step, full snapshot mỗi N steps hoặc khi session kết thúc.
 
-        # Append delta
-        await self.redis.rpush(
-            f"checkpoint:deltas:{session.id}",
-            delta.serialize(),
-        )
-        await self.pg.append_delta(delta)
+**Constructor**: Nhận `redis`, `pg`, và `snapshot_interval: int = 10` (mặc định 10 steps giữa các snapshot).
 
-        # Periodic full snapshot
-        if session.step_index % self.snapshot_interval == 0:
-            await self.save_snapshot(session)
+**Method: save_delta(session: Session, step_result: StepResult) -> None**
 
-    async def save_snapshot(self, session: Session) -> None:
-        """Full session state serialize."""
-        snapshot = CheckpointSnapshot(
-            session_id=session.id,
-            step_index=session.step_index,
-            state=session.serialize(),
-            conversation_hash=hash(session.conversation),
-            token_usage=session.token_usage,
-            timestamp=utcnow(),
-        )
+1. Serialize chỉ new messages + tool results từ step vừa xong thành đối tượng `CheckpointDelta` (bao gồm session_id, step_index, new_messages, tool_results, metadata_updates, token_usage_delta, timestamp).
+2. Append delta vào Redis list theo key `checkpoint:deltas:{session.id}`.
+3. Async append vào PostgreSQL qua `pg.append_delta(delta)`.
+4. Nếu `step_index % snapshot_interval == 0`, tự động gọi `save_snapshot()`.
 
-        await self.redis.set(
-            f"checkpoint:snapshot:{session.id}",
-            snapshot.serialize(),
-            ex=session.ttl_seconds,
-        )
-        await self.pg.upsert_snapshot(snapshot)
+**Method: save_snapshot(session: Session) -> None**
 
-        # Clear applied deltas
-        await self.redis.delete(f"checkpoint:deltas:{session.id}")
+Full session state serialize:
 
-    async def restore(self, session_id: str) -> Session | None:
-        """
-        1. Load last snapshot (Redis -> fallback PG)
-        2. Load deltas sau snapshot
-        3. Replay deltas lên snapshot -> session hiện tại
-        """
-        # Load snapshot
-        snapshot_data = await self.redis.get(f"checkpoint:snapshot:{session_id}")
-        if not snapshot_data:
-            snapshot = await self.pg.get_latest_snapshot(session_id)
-            if snapshot:
-                snapshot_data = snapshot.state
-            else:
-                return None
+1. Tạo `CheckpointSnapshot` với toàn bộ state của session (session_id, step_index, serialized state, conversation_hash, token_usage, timestamp).
+2. Lưu vào Redis theo key `checkpoint:snapshot:{session.id}` với TTL bằng `session.ttl_seconds`.
+3. Upsert vào PostgreSQL qua `pg.upsert_snapshot(snapshot)`.
+4. Clear các deltas đã applied khỏi Redis (delete key `checkpoint:deltas:{session.id}`).
 
-        session = Session.deserialize(snapshot_data)
+**Method: restore(session_id: str) -> Session | None**
 
-        # Load & replay deltas
-        delta_list = await self.redis.lrange(f"checkpoint:deltas:{session_id}", 0, -1)
-        if not delta_list:
-            delta_list = await self.pg.get_deltas_after(session_id, session.step_index)
+1. Load last snapshot từ Redis (key `checkpoint:snapshot:{session_id}`). Nếu không có trong Redis, fallback lấy từ PostgreSQL qua `pg.get_latest_snapshot(session_id)`. Nếu không có snapshot nào, trả về `None`.
+2. Deserialize snapshot thành `Session`.
+3. Load deltas sau snapshot: lấy từ Redis list (`checkpoint:deltas:{session_id}`). Nếu không có trong Redis, fallback lấy từ PostgreSQL qua `pg.get_deltas_after(session_id, session.step_index)`.
+4. Replay từng delta lên session bằng `session.apply_delta(delta)`.
+5. Warm up Redis: lưu lại session đã restore vào Redis snapshot key với TTL tương ứng.
+6. Trả về session đã restore.
 
-        for delta_data in delta_list:
-            delta = CheckpointDelta.deserialize(delta_data)
-            session.apply_delta(delta)
+**Method: cleanup(session_id: str) -> None**
 
-        # Warm up Redis
-        await self.redis.set(
-            f"checkpoint:snapshot:{session_id}",
-            session.serialize(),
-            ex=session.ttl_seconds,
-        )
-
-        return session
-
-    async def cleanup(self, session_id: str) -> None:
-        await self.redis.delete(f"checkpoint:snapshot:{session_id}")
-        await self.redis.delete(f"checkpoint:deltas:{session_id}")
-```
+Xóa cả snapshot và deltas khỏi Redis cho session đã cho (delete key `checkpoint:snapshot:{session_id}` và `checkpoint:deltas:{session_id}`).
 
 ---
 
 ### 2.7 Budget Controller
 
-```python
-class BudgetController:
-    async def check(self, session: Session) -> BudgetCheckResult:
-        config = session.agent_config.execution_config
-        usage = session.usage
+**Class: BudgetController**
 
-        checks = []
+**Method: check(session: Session) -> BudgetCheckResult**
 
-        # Token budget
-        if config.max_tokens_budget:
-            ratio = usage.total_tokens / config.max_tokens_budget
-            checks.append(BudgetCheck("tokens", ratio, config.max_tokens_budget))
+Kiểm tra budget của session theo 4 chiều:
 
-        # Cost budget
-        if config.max_cost_usd:
-            ratio = usage.total_cost / config.max_cost_usd
-            checks.append(BudgetCheck("cost", ratio, config.max_cost_usd))
+1. **Token budget**: Nếu `config.max_tokens_budget` được cấu hình, tính `ratio = usage.total_tokens / config.max_tokens_budget`.
+2. **Cost budget**: Nếu `config.max_cost_usd` được cấu hình, tính `ratio = usage.total_cost / config.max_cost_usd`.
+3. **Step budget**: Nếu `config.max_steps` được cấu hình, tính `ratio = session.step_index / config.max_steps`.
+4. **Time budget**: Nếu `config.max_duration_seconds` được cấu hình, tính `elapsed = (utcnow() - session.created_at).total_seconds()` rồi `ratio = elapsed / config.max_duration_seconds`.
 
-        # Step budget
-        if config.max_steps:
-            ratio = session.step_index / config.max_steps
-            checks.append(BudgetCheck("steps", ratio, config.max_steps))
+Lấy `max_ratio` là giá trị ratio lớn nhất trong tất cả các checks. Trả về `BudgetCheckResult` với:
 
-        # Time budget
-        if config.max_duration_seconds:
-            elapsed = (utcnow() - session.created_at).total_seconds()
-            ratio = elapsed / config.max_duration_seconds
-            checks.append(BudgetCheck("time", ratio, config.max_duration_seconds))
-
-        max_ratio = max(c.ratio for c in checks) if checks else 0
-
-        return BudgetCheckResult(
-            exhausted=(max_ratio >= 1.0),
-            warning=(max_ratio >= 0.8),
-            critical=(max_ratio >= 0.95),
-            warning_message=self._build_warning(checks, max_ratio),
-            checks=checks,
-        )
-```
+| Field | Điều kiện | Mô tả |
+|-------|-----------|--------|
+| exhausted | max_ratio >= 1.0 | Budget đã hết, cần dừng |
+| warning | max_ratio >= 0.8 | Cảnh báo sắp hết budget |
+| critical | max_ratio >= 0.95 | Sắp hết budget (critical) |
+| warning_message | — | Message cảnh báo được build từ các checks |
+| checks | — | Danh sách tất cả BudgetCheck |
 
 ---
 
 ### 2.8 Context Assembler
 
-```python
-class ContextAssembler:
-    async def build(
-        self,
-        session: Session,
-        agent_config: AgentConfig,
-        memory_manager: MemoryManager,
-    ) -> ContextPayload:
-        """
-        Assembly order (top = first in message list):
+**Class: ContextAssembler**
 
-        ┌─────────────────────────────────────────────────┐
-        │ 1. System Prompt (from agent config)             │  Always present
-        ├─────────────────────────────────────────────────┤
-        │ 2. Canary Token (if guardrails.canary_enabled)  │  Security
-        ├─────────────────────────────────────────────────┤
-        │ 3. Long-term Memory Results (RAG)               │  If relevant memories found
-        ├─────────────────────────────────────────────────┤
-        │ 4. Working Memory (plan, scratchpad)            │  If plan-execute pattern
-        ├─────────────────────────────────────────────────┤
-        │ 5. Episodic Memory (past episodes)              │  Phase 3
-        ├─────────────────────────────────────────────────┤
-        │ 6. Budget Warning (if approaching limit)        │  If budget > 80%
-        ├─────────────────────────────────────────────────┤
-        │ 7. Conversation Summary (if summarized)         │  If short-term used summarize
-        ├─────────────────────────────────────────────────┤
-        │ 8. Recent Messages (user + assistant + tool)    │  Last N messages
-        └─────────────────────────────────────────────────┘
+**Method: build(session: Session, agent_config: AgentConfig, memory_manager: MemoryManager) -> ContextPayload**
 
-        Total tokens capped at agent_config.max_context_tokens.
-        If over budget: trim from middle sections (3-6), never from 1 or 8.
-        """
+Assembly order (top = first in message list):
+
 ```
+┌─────────────────────────────────────────────────┐
+│ 1. System Prompt (from agent config)             │  Always present
+├─────────────────────────────────────────────────┤
+│ 2. Canary Token (if guardrails.canary_enabled)  │  Security
+├─────────────────────────────────────────────────┤
+│ 3. Long-term Memory Results (RAG)               │  If relevant memories found
+├─────────────────────────────────────────────────┤
+│ 4. Working Memory (plan, scratchpad)            │  If plan-execute pattern
+├─────────────────────────────────────────────────┤
+│ 5. Episodic Memory (past episodes)              │  Phase 3
+├─────────────────────────────────────────────────┤
+│ 6. Budget Warning (if approaching limit)        │  If budget > 80%
+├─────────────────────────────────────────────────┤
+│ 7. Conversation Summary (if summarized)         │  If short-term used summarize
+├─────────────────────────────────────────────────┤
+│ 8. Recent Messages (user + assistant + tool)    │  Last N messages
+└─────────────────────────────────────────────────┘
+```
+
+Total tokens capped at `agent_config.max_context_tokens`. If over budget: trim from middle sections (3-6), never from 1 or 8.
 
 ---
 
 ### 2.9 Event Emitter
 
-```python
-class EventEmitter:
-    async def emit(self, events: list[AgentEvent]) -> None:
-        """
-        Dual-path emission:
-        1. OpenTelemetry span -> Trace Store
-        2. Redis pub/sub -> WebSocket handler -> Client
-        """
+**Class: EventEmitter**
 
-    # Event types:
-    # - step_start:      {step_index, pattern}
-    # - llm_call_start:  {model, prompt_tokens_estimate}
-    # - llm_call_end:    {model, prompt_tokens, completion_tokens, cost, latency}
-    # - thought:         {content}
-    # - tool_call:       {tool_name, input}
-    # - tool_result:     {tool_name, output, duration, success}
-    # - checkpoint:      {step_index, state_size}
-    # - budget_warning:  {type, usage_ratio}
-    # - final_answer:    {content, total_steps, total_cost}
-    # - error:           {message, retryable}
-```
+**Method: emit(events: list[AgentEvent]) -> None**
+
+Dual-path emission:
+
+1. **OpenTelemetry span** -> Trace Store
+2. **Redis pub/sub** -> WebSocket handler -> Client
+
+**Event types:**
+
+| Event Type | Payload Fields |
+|------------|---------------|
+| step_start | step_index, pattern |
+| llm_call_start | model, prompt_tokens_estimate |
+| llm_call_end | model, prompt_tokens, completion_tokens, cost, latency |
+| thought | content |
+| tool_call | tool_name, input |
+| tool_result | tool_name, output, duration, success |
+| checkpoint | step_index, state_size |
+| budget_warning | type, usage_ratio |
+| final_answer | content, total_steps, total_cost |
+| error | message, retryable |
 
 ---
 
@@ -753,27 +589,31 @@ Executor A (crashes)     Queue         Executor B (picks up)     Checkpoint Stor
 
 ### 4.1 Error Taxonomy
 
-```python
-class ErrorCategory(str, Enum):
-    LLM_RATE_LIMIT = "llm_rate_limit"
-    LLM_SERVER_ERROR = "llm_server_error"
-    LLM_CONTENT_REFUSAL = "llm_content_refusal"
-    LLM_MALFORMED_RESPONSE = "llm_malformed"
-    LLM_TIMEOUT = "llm_timeout"
-    TOOL_TIMEOUT = "tool_timeout"
-    TOOL_AUTH_FAILURE = "tool_auth_failure"
-    TOOL_EXECUTION_ERROR = "tool_execution_error"
-    CHECKPOINT_WRITE_FAIL = "checkpoint_write"
-    BUDGET_EXCEEDED = "budget_exceeded"
-    EXECUTOR_CRASH = "executor_crash"
+**Enum: ErrorCategory**
 
-class RetryPolicy:
-    category: ErrorCategory
-    max_retries: int
-    backoff_base_seconds: float
-    backoff_multiplier: float
-    backoff_max_seconds: float
-```
+| Value | Description |
+|-------|-------------|
+| LLM_RATE_LIMIT | "llm_rate_limit" — LLM provider trả về lỗi rate limit |
+| LLM_SERVER_ERROR | "llm_server_error" — LLM provider trả về lỗi server (5xx) |
+| LLM_CONTENT_REFUSAL | "llm_content_refusal" — LLM từ chối trả lời do content policy |
+| LLM_MALFORMED_RESPONSE | "llm_malformed" — Response từ LLM không đúng format mong đợi |
+| LLM_TIMEOUT | "llm_timeout" — LLM call bị timeout |
+| TOOL_TIMEOUT | "tool_timeout" — Tool execution bị timeout |
+| TOOL_AUTH_FAILURE | "tool_auth_failure" — Tool yêu cầu xác thực nhưng thất bại |
+| TOOL_EXECUTION_ERROR | "tool_execution_error" — Tool chạy nhưng gặp lỗi |
+| CHECKPOINT_WRITE_FAIL | "checkpoint_write" — Ghi checkpoint thất bại |
+| BUDGET_EXCEEDED | "budget_exceeded" — Budget đã hết |
+| EXECUTOR_CRASH | "executor_crash" — Executor process bị crash |
+
+**Data Model: RetryPolicy**
+
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| category | ErrorCategory | — | Loại lỗi áp dụng policy |
+| max_retries | int | — | Số lần retry tối đa |
+| backoff_base_seconds | float | — | Thời gian chờ cơ sở trước retry |
+| backoff_multiplier | float | — | Hệ số nhân cho exponential backoff |
+| backoff_max_seconds | float | — | Thời gian chờ tối đa giữa các retry |
 
 **RetryPolicy Defaults:**
 
@@ -799,55 +639,41 @@ class RetryPolicy:
 
 ### Phase 1
 
-```python
-@dataclass
-class ExecutionConfig:
-    pattern: Literal["react"] = "react"
+**Data Model: ExecutionConfig**
 
-    # Budget limits
-    max_steps: int = 30
-    max_tokens_budget: int = 50_000
-    max_cost_usd: float = 5.0
-    max_duration_seconds: int = 600
-
-    # Budget behavior
-    budget_warning_threshold: float = 0.8
-    budget_critical_threshold: float = 0.95
-
-    # Checkpoint
-    checkpoint_enabled: bool = True
-    checkpoint_interval: int = 1
-    checkpoint_snapshot_interval: int = 10
-
-    # ReAct specific
-    react_max_consecutive_tool_calls: int = 10
-
-    # Error handling
-    max_retries_per_step: int = 2
-    retry_backoff_seconds: float = 1.0
-
-    # Context management
-    max_context_tokens: int = 8000
-    context_strategy: Literal["sliding_window", "summarize_recent", "selective", "token_trim"] = "summarize_recent"
-```
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| pattern | Literal["react"] | "react" | Execution pattern sử dụng |
+| max_steps | int | 30 | Số bước tối đa cho mỗi session |
+| max_tokens_budget | int | 50,000 | Tổng token tối đa cho mỗi session |
+| max_cost_usd | float | 5.0 | Chi phí tối đa (USD) cho mỗi session |
+| max_duration_seconds | int | 600 | Thời gian tối đa (giây) cho mỗi session |
+| budget_warning_threshold | float | 0.8 | Ngưỡng cảnh báo budget (80%) |
+| budget_critical_threshold | float | 0.95 | Ngưỡng critical budget (95%) |
+| checkpoint_enabled | bool | True | Bật/tắt checkpoint |
+| checkpoint_interval | int | 1 | Lưu delta sau mỗi N steps |
+| checkpoint_snapshot_interval | int | 10 | Lưu full snapshot sau mỗi N steps |
+| react_max_consecutive_tool_calls | int | 10 | Số tool call liên tiếp tối đa (phát hiện loop) |
+| max_retries_per_step | int | 2 | Số lần retry tối đa cho mỗi step bị lỗi |
+| retry_backoff_seconds | float | 1.0 | Thời gian chờ cơ sở giữa các retry |
+| max_context_tokens | int | 8,000 | Giới hạn token cho context window |
+| context_strategy | Literal["sliding_window", "summarize_recent", "selective", "token_trim"] | "summarize_recent" | Chiến lược quản lý context khi vượt giới hạn |
 
 ### Phase 2
 
-```python
-@dataclass
-class ExecutionConfigPhase2(ExecutionConfig):
-    pattern: Literal["react", "plan_execute", "reflexion"] = "react"
+**Data Model: ExecutionConfigPhase2** (kế thừa từ ExecutionConfig)
 
-    # Plan-Execute specific
-    plan_max_steps: int = 10
-    plan_max_replans: int = 3
-    plan_step_max_substeps: int = 5
-    plan_parallel_steps: bool = False
+Bao gồm tất cả field từ ExecutionConfig, cộng thêm:
 
-    # Reflexion specific
-    reflexion_max_attempts: int = 3
-    reflexion_evaluator: Literal["llm_judge", "custom_function"] = "llm_judge"
-```
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| pattern | Literal["react", "plan_execute", "reflexion"] | "react" | Mở rộng thêm 2 pattern mới |
+| plan_max_steps | int | 10 | Số bước tối đa trong một plan |
+| plan_max_replans | int | 3 | Số lần replan tối đa |
+| plan_step_max_substeps | int | 5 | Số sub-step tối đa cho mỗi plan step |
+| plan_parallel_steps | bool | False | Cho phép thực thi song song các steps không phụ thuộc |
+| reflexion_max_attempts | int | 3 | Số lần attempt tối đa cho Reflexion |
+| reflexion_evaluator | Literal["llm_judge", "custom_function"] | "llm_judge" | Phương thức đánh giá kết quả |
 
 ---
 

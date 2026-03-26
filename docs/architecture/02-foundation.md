@@ -225,101 +225,65 @@ core/ ←──── (imported by all layers)
 
 ## 3. Dependencies (pyproject.toml)
 
-```toml
-[project]
-name = "agent-platform"
-version = "0.1.0"
-requires-python = ">=3.12"
-description = "Agent Serving Platform"
+Project **agent-platform** version 0.1.0 yêu cầu Python >= 3.12. Build system sử dụng **hatchling**, với wheel target package là `src`.
 
-dependencies = [
-    # Web framework
-    "fastapi>=0.115,<1.0",
-    "uvicorn[standard]>=0.32,<1.0",
-    "sse-starlette>=2.0,<3.0",       # SSE support for FastAPI
+**Core dependencies:**
 
-    # LLM providers
-    "anthropic>=0.42,<1.0",           # Anthropic SDK (includes httpx)
+| Category | Package | Version Constraint | Purpose |
+|----------|---------|-------------------|---------|
+| Web framework | fastapi | >=0.115, <1.0 | API framework |
+| Web framework | uvicorn[standard] | >=0.32, <1.0 | ASGI server |
+| Web framework | sse-starlette | >=2.0, <3.0 | SSE support for FastAPI |
+| LLM providers | anthropic | >=0.42, <1.0 | Anthropic SDK (includes httpx) |
+| MCP | mcp | >=1.0, <2.0 | MCP Python SDK |
+| Database | asyncpg | >=0.30, <1.0 | Async PostgreSQL driver |
+| Database | sqlalchemy | >=2.0, <3.0 | SQL toolkit (async) |
+| Database | alembic | >=1.14, <2.0 | Database migrations |
+| Redis | redis[hiredis] | >=5.2, <6.0 | Async Redis client |
+| Configuration | pydantic | >=2.10, <3.0 | Data validation |
+| Configuration | pydantic-settings | >=2.7, <3.0 | Settings from env vars |
+| Observability | opentelemetry-api | >=1.29, <2.0 | OTel API |
+| Observability | opentelemetry-sdk | >=1.29, <2.0 | OTel SDK |
+| Observability | opentelemetry-exporter-otlp | >=1.29, <2.0 | OTLP exporter |
+| Observability | opentelemetry-instrumentation-fastapi | >=0.50b, <1.0 | FastAPI auto-instrumentation |
+| Observability | opentelemetry-instrumentation-httpx | >=0.50b, <1.0 | httpx auto-instrumentation |
+| Observability | opentelemetry-instrumentation-redis | >=0.50b, <1.0 | Redis auto-instrumentation |
+| Observability | opentelemetry-instrumentation-sqlalchemy | >=0.50b, <1.0 | SQLAlchemy auto-instrumentation |
+| Serialization | msgpack | >=1.1, <2.0 | Binary serialization for checkpoints |
+| Serialization | orjson | >=3.10, <4.0 | Fast JSON (optional, replace stdlib json) |
+| Security | python-jose[cryptography] | >=3.3, <4.0 | JWT validation |
+| Security | passlib[bcrypt] | >=1.7, <2.0 | Password hashing (API keys) |
+| Security | cryptography | >=44, <45 | Encryption (MCP server env vars) |
+| Utilities | structlog | >=24.4, <25.0 | Structured logging |
+| Utilities | tenacity | >=9.0, <10.0 | Retry utility (used by stores, not LLM — LLM has custom retry) |
 
-    # MCP
-    "mcp>=1.0,<2.0",                  # MCP Python SDK
+**Dev dependencies** (optional group `dev`):
 
-    # Database
-    "asyncpg>=0.30,<1.0",            # Async PostgreSQL driver
-    "sqlalchemy>=2.0,<3.0",          # SQL toolkit (async)
-    "alembic>=1.14,<2.0",            # Database migrations
+| Package | Version Constraint | Purpose |
+|---------|-------------------|---------|
+| pytest | >=8.3, <9.0 | Test runner |
+| pytest-asyncio | >=0.25, <1.0 | Async test support |
+| pytest-cov | >=6.0, <7.0 | Coverage reporting |
+| httpx | >=0.28, <1.0 | TestClient |
+| fakeredis[lua] | >=2.26, <3.0 | In-memory Redis for tests |
+| testcontainers[postgres] | >=4.0, <5.0 | PostgreSQL in Docker for integration tests |
+| factory-boy | >=3.3, <4.0 | Test fixtures |
+| ruff | >=0.8, <1.0 | Linter + formatter |
+| mypy | >=1.14, <2.0 | Type checking |
 
-    # Redis
-    "redis[hiredis]>=5.2,<6.0",     # Async Redis client
+**Tool configuration:**
 
-    # Configuration
-    "pydantic>=2.10,<3.0",           # Data validation
-    "pydantic-settings>=2.7,<3.0",   # Settings from env vars
-
-    # Observability
-    "opentelemetry-api>=1.29,<2.0",
-    "opentelemetry-sdk>=1.29,<2.0",
-    "opentelemetry-exporter-otlp>=1.29,<2.0",
-    "opentelemetry-instrumentation-fastapi>=0.50b,<1.0",
-    "opentelemetry-instrumentation-httpx>=0.50b,<1.0",
-    "opentelemetry-instrumentation-redis>=0.50b,<1.0",
-    "opentelemetry-instrumentation-sqlalchemy>=0.50b,<1.0",
-
-    # Serialization
-    "msgpack>=1.1,<2.0",             # Binary serialization for checkpoints
-    "orjson>=3.10,<4.0",             # Fast JSON (optional, replace stdlib json)
-
-    # Security
-    "python-jose[cryptography]>=3.3,<4.0",  # JWT validation
-    "passlib[bcrypt]>=1.7,<2.0",     # Password hashing (API keys)
-    "cryptography>=44,<45",          # Encryption (MCP server env vars)
-
-    # Utilities
-    "structlog>=24.4,<25.0",         # Structured logging
-    "tenacity>=9.0,<10.0",           # Retry utility (used by stores, not LLM — LLM has custom retry)
-]
-
-[project.optional-dependencies]
-dev = [
-    "pytest>=8.3,<9.0",
-    "pytest-asyncio>=0.25,<1.0",
-    "pytest-cov>=6.0,<7.0",
-    "httpx>=0.28,<1.0",              # TestClient
-    "fakeredis[lua]>=2.26,<3.0",     # In-memory Redis for tests
-    "testcontainers[postgres]>=4.0,<5.0",  # PostgreSQL in Docker for integration tests
-    "factory-boy>=3.3,<4.0",         # Test fixtures
-    "ruff>=0.8,<1.0",                # Linter + formatter
-    "mypy>=1.14,<2.0",               # Type checking
-]
-
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
-
-[tool.hatch.build.targets.wheel]
-packages = ["src"]
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-asyncio_mode = "auto"
-markers = [
-    "unit: Unit tests (no external deps)",
-    "integration: Integration tests (need PG + Redis)",
-    "e2e: End-to-end tests (full system)",
-]
-
-[tool.ruff]
-target-version = "py312"
-line-length = 120
-
-[tool.ruff.lint]
-select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
-
-[tool.mypy]
-python_version = "3.12"
-strict = true
-plugins = ["pydantic.mypy"]
-```
+| Tool | Setting | Value |
+|------|---------|-------|
+| pytest | testpaths | tests |
+| pytest | asyncio_mode | auto |
+| pytest | markers | `unit` (no external deps), `integration` (need PG + Redis), `e2e` (full system) |
+| ruff | target-version | py312 |
+| ruff | line-length | 120 |
+| ruff.lint | select | E, F, W, I, UP, B, SIM, RUF |
+| mypy | python_version | 3.12 |
+| mypy | strict | true |
+| mypy | plugins | pydantic.mypy |
 
 ### 3.1 Dependency Decisions
 
@@ -342,153 +306,116 @@ plugins = ["pydantic.mypy"]
 
 Tất cả configuration load từ **environment variables**, hỗ trợ `.env` file cho local dev.
 
-```python
-from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field
+Class **Settings** là root configuration, kế thừa từ Pydantic BaseSettings. Cấu hình model: prefix = `APP_`, nested delimiter = `__`, hỗ trợ file `.env` (UTF-8), case insensitive.
 
+Ví dụ: biến môi trường `APP_DATABASE__HOST=localhost` sẽ map thành `settings.database.host`.
 
-class Settings(BaseSettings):
-    """
-    Root configuration. Load từ env vars, prefix = APP_.
-    Ví dụ: APP_DATABASE__HOST=localhost → settings.database.host
-    """
-    model_config = SettingsConfigDict(
-        env_prefix="APP_",
-        env_nested_delimiter="__",
-        env_file=".env",
-        env_file_encoding="utf-8",
-        case_sensitive=False,
-    )
+**Settings (root):**
 
-    # ── Application ──
-    app_name: str = "agent-platform"
-    environment: str = "development"           # development | staging | production
-    debug: bool = False
-    log_level: str = "INFO"
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| app_name | str | "agent-platform" | Tên ứng dụng |
+| environment | str | "development" | Môi trường: development / staging / production |
+| debug | bool | False | Bật debug mode |
+| log_level | str | "INFO" | Mức log |
+| server | ServerSettings | (default factory) | Cấu hình server |
+| database | DatabaseSettings | (default factory) | Cấu hình database |
+| redis | RedisSettings | (default factory) | Cấu hình Redis |
+| llm | LLMSettings | (default factory) | Cấu hình LLM |
+| auth | AuthSettings | (default factory) | Cấu hình authentication |
+| tracing | TracingSettings | (default factory) | Cấu hình tracing |
+| governance | GovernanceSettings | (default factory) | Cấu hình governance |
 
-    # ── Server ──
-    server: "ServerSettings" = Field(default_factory=lambda: ServerSettings())
+**ServerSettings:**
 
-    # ── Database ──
-    database: "DatabaseSettings" = Field(default_factory=lambda: DatabaseSettings())
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| host | str | "0.0.0.0" | Bind address |
+| port | int | 8000 | HTTP port |
+| workers | int | 1 | Uvicorn workers (API process) |
+| executor_workers | int | 4 | Executor worker processes |
 
-    # ── Redis ──
-    redis: "RedisSettings" = Field(default_factory=lambda: RedisSettings())
+**DatabaseSettings:**
 
-    # ── LLM ──
-    llm: "LLMSettings" = Field(default_factory=lambda: LLMSettings())
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| host | str | "localhost" | PostgreSQL host |
+| port | int | 5432 | PostgreSQL port |
+| name | str | "agent_platform" | Database name |
+| user | str | "postgres" | Database user |
+| password | str | "" | Database password (REQUIRED in production) |
+| pool_min_size | int | 5 | Connection pool minimum |
+| pool_max_size | int | 20 | Connection pool maximum |
+| echo | bool | False | SQLAlchemy echo (debug only) |
 
-    # ── Auth ──
-    auth: "AuthSettings" = Field(default_factory=lambda: AuthSettings())
+DatabaseSettings cũng cung cấp một property `dsn` trả về connection string dạng `postgresql+asyncpg://{user}:{password}@{host}:{port}/{name}`.
 
-    # ── Tracing ──
-    tracing: "TracingSettings" = Field(default_factory=lambda: TracingSettings())
+**RedisSettings:**
 
-    # ── Governance ──
-    governance: "GovernanceSettings" = Field(default_factory=lambda: GovernanceSettings())
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| url | str | "redis://localhost:6379/0" | Redis connection URL |
+| max_connections | int | 50 | Maximum connections |
+| decode_responses | bool | True | Decode bytes to str |
+| socket_timeout | float | 5.0 | Socket timeout (seconds) |
+| retry_on_timeout | bool | True | Auto-retry on timeout |
 
+**LLMSettings:**
 
-class ServerSettings(BaseSettings):
-    host: str = "0.0.0.0"
-    port: int = 8000
-    workers: int = 1                           # uvicorn workers (API process)
-    executor_workers: int = 4                  # executor worker processes
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| anthropic_api_key | str | "" | Anthropic API key (REQUIRED) |
+| default_model | str | "claude-sonnet-4-5-20250514" | Default model |
+| default_timeout | float | 120.0 | Request timeout (seconds) |
+| max_connections | int | 100 | Max HTTP connections |
+| max_keepalive | int | 20 | Max keepalive connections |
 
+**AuthSettings:**
 
-class DatabaseSettings(BaseSettings):
-    host: str = "localhost"
-    port: int = 5432
-    name: str = "agent_platform"
-    user: str = "postgres"
-    password: str = ""                         # REQUIRED in production
-    pool_min_size: int = 5
-    pool_max_size: int = 20
-    echo: bool = False                         # SQLAlchemy echo (debug only)
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| jwt_secret | str | "" | JWT secret (REQUIRED in production, or use JWKS) |
+| jwt_algorithm | str | "HS256" | JWT signing algorithm |
+| jwt_issuer | str | "agent-platform" | JWT issuer claim |
+| jwt_audience | str | "agent-platform" | JWT audience claim |
+| jwt_expiry_seconds | int | 3600 | JWT token expiry |
+| api_key_hash_scheme | str | "bcrypt" | passlib scheme for API key hashing |
 
-    @property
-    def dsn(self) -> str:
-        return f"postgresql+asyncpg://{self.user}:{self.password}@{self.host}:{self.port}/{self.name}"
+**TracingSettings:**
 
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| enabled | bool | True | Enable tracing |
+| exporter | str | "otlp" | Exporter type: otlp / console / none |
+| otlp_endpoint | str | "http://localhost:4317" | OTLP collector endpoint |
+| service_name | str | "agent-platform" | OTel service name |
+| sample_rate | float | 1.0 | Sampling rate (1.0 = 100%) |
 
-class RedisSettings(BaseSettings):
-    url: str = "redis://localhost:6379/0"
-    max_connections: int = 50
-    decode_responses: bool = True
-    socket_timeout: float = 5.0
-    retry_on_timeout: bool = True
+**GovernanceSettings:**
 
-
-class LLMSettings(BaseSettings):
-    anthropic_api_key: str = ""                # REQUIRED
-    default_model: str = "claude-sonnet-4-5-20250514"
-    default_timeout: float = 120.0
-    max_connections: int = 100
-    max_keepalive: int = 20
-
-
-class AuthSettings(BaseSettings):
-    jwt_secret: str = ""                       # REQUIRED in production (or use JWKS)
-    jwt_algorithm: str = "HS256"
-    jwt_issuer: str = "agent-platform"
-    jwt_audience: str = "agent-platform"
-    jwt_expiry_seconds: int = 3600
-    api_key_hash_scheme: str = "bcrypt"        # passlib scheme
-
-
-class TracingSettings(BaseSettings):
-    enabled: bool = True
-    exporter: str = "otlp"                     # otlp | console | none
-    otlp_endpoint: str = "http://localhost:4317"
-    service_name: str = "agent-platform"
-    sample_rate: float = 1.0                   # 1.0 = 100% sampling
-
-
-class GovernanceSettings(BaseSettings):
-    audit_enabled: bool = True
-    audit_buffer_size: int = 1000
-    audit_flush_interval_ms: int = 500
-    retention_enabled: bool = True
-    retention_schedule_cron: str = "0 2 * * *"
-    classification_enabled: bool = True
-    cost_tracking_enabled: bool = True
-```
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| audit_enabled | bool | True | Enable audit logging |
+| audit_buffer_size | int | 1000 | Audit write-behind buffer size |
+| audit_flush_interval_ms | int | 500 | Audit flush interval (ms) |
+| retention_enabled | bool | True | Enable data retention |
+| retention_schedule_cron | str | "0 2 * * *" | Retention job cron (daily at 2 AM) |
+| classification_enabled | bool | True | Enable data classification |
+| cost_tracking_enabled | bool | True | Enable cost tracking |
 
 ### 4.2 Environment Variable Examples
 
-```bash
-# .env (local development)
+Các biến môi trường cho local development (file `.env`):
 
-# Database
-APP_DATABASE__HOST=localhost
-APP_DATABASE__PORT=5432
-APP_DATABASE__NAME=agent_platform
-APP_DATABASE__USER=postgres
-APP_DATABASE__PASSWORD=localdev
-
-# Redis
-APP_REDIS__URL=redis://localhost:6379/0
-
-# LLM
-APP_LLM__ANTHROPIC_API_KEY=sk-ant-api03-...
-
-# Auth
-APP_AUTH__JWT_SECRET=dev-secret-change-in-production
-
-# Tracing
-APP_TRACING__ENABLED=true
-APP_TRACING__EXPORTER=console
-```
+- **Database:** `APP_DATABASE__HOST=localhost`, `APP_DATABASE__PORT=5432`, `APP_DATABASE__NAME=agent_platform`, `APP_DATABASE__USER=postgres`, `APP_DATABASE__PASSWORD=localdev`
+- **Redis:** `APP_REDIS__URL=redis://localhost:6379/0`
+- **LLM:** `APP_LLM__ANTHROPIC_API_KEY=sk-ant-api03-...`
+- **Auth:** `APP_AUTH__JWT_SECRET=dev-secret-change-in-production`
+- **Tracing:** `APP_TRACING__ENABLED=true`, `APP_TRACING__EXPORTER=console`
 
 ### 4.3 Config Access Pattern
 
-```python
-# Singleton — loaded once at startup, injected everywhere via DI
-from functools import lru_cache
-
-@lru_cache
-def get_settings() -> Settings:
-    return Settings()
-```
+Settings được load một lần tại startup dưới dạng singleton, sử dụng hàm `get_settings()` được cache bằng `@lru_cache` (từ `functools`). Hàm này trả về instance duy nhất của `Settings()` và được inject vào mọi component qua DI.
 
 ---
 
@@ -503,273 +430,71 @@ def get_settings() -> Settings:
 
 ### 5.2 Application State (Singletons)
 
-```python
-from dataclasses import dataclass, field
-from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
-from redis.asyncio import Redis
+Class **AppState** là một dataclass chứa tất cả application-scoped singletons. Được tạo trong lifespan, gắn vào `app.state`, và inject vào request handlers qua FastAPI Depends.
 
-
-@dataclass
-class AppState:
-    """
-    Application-scoped singletons. Created in lifespan, attached to app.state.
-    Injected into request handlers via FastAPI Depends.
-    """
-    settings: Settings
-    db_engine: AsyncEngine
-    db_session_factory: async_sessionmaker
-    redis: Redis
-
-    # Providers
-    llm_gateway: "AnthropicGateway"
-    mcp_client_manager: "MCPClientManager"
-
-    # Services
-    agent_service: "AgentService"
-    session_service: "SessionService"
-    tool_service: "ToolService"
-    memory_service: "MemoryService"
-
-    # Engine
-    guardrails_engine: "GuardrailsEngine"
-    event_bus: "EventBus"
-
-    # Governance
-    governance: "GovernancePort"
-```
+| Field | Type | Description |
+|-------|------|-------------|
+| settings | Settings | Application configuration |
+| db_engine | AsyncEngine | SQLAlchemy async engine |
+| db_session_factory | async_sessionmaker | DB session factory |
+| redis | Redis | Async Redis client |
+| llm_gateway | AnthropicGateway | LLM provider |
+| mcp_client_manager | MCPClientManager | MCP connection manager |
+| agent_service | AgentService | Agent CRUD service |
+| session_service | SessionService | Session lifecycle service |
+| tool_service | ToolService | Tool registry & invocation |
+| memory_service | MemoryService | Memory orchestration |
+| guardrails_engine | GuardrailsEngine | Guardrails pipeline |
+| event_bus | EventBus | Event publish/subscribe |
+| governance | GovernancePort | Governance (audit, retention, cost) |
 
 ### 5.3 Lifespan — Startup / Shutdown
 
-```python
-from contextlib import asynccontextmanager
-from fastapi import FastAPI
+Hàm **lifespan** là một async context manager gắn vào FastAPI app, chịu trách nhiệm tạo và dọn dẹp tất cả resources. Quy trình khởi tạo theo 6 phase:
 
+**Phase 1 — Infrastructure:** Tạo async database engine (SQLAlchemy) với pool size từ settings, tạo session factory (`expire_on_commit=False`), tạo Redis client từ URL. Verify connections bằng `SELECT 1` (database) và `PING` (Redis).
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """Application lifecycle: create → yield (serve) → cleanup."""
+**Phase 2 — Tracing:** Khởi tạo OpenTelemetry tracer provider từ tracing settings.
 
-    settings = get_settings()
+**Phase 3 — Providers:** Tạo `AnthropicGateway` với config gồm api_key, default_timeout, max_connections, max_keepalive. Tạo `MCPClientManager` với Redis instance.
 
-    # ── Phase 1: Infrastructure ──
-    db_engine = create_async_engine(settings.database.dsn, pool_size=settings.database.pool_max_size)
-    db_session_factory = async_sessionmaker(db_engine, expire_on_commit=False)
-    redis = Redis.from_url(settings.redis.url, max_connections=settings.redis.max_connections)
+**Phase 4 — Stores:** Tạo tất cả PostgreSQL repositories (AgentRepository, SessionRepository, MessageRepository, CheckpointRepository, ToolRepository, AuditRepository, CostRepository) — mỗi repository nhận `db_session_factory`. Tạo tất cả Redis stores (SessionRedisStore, CheckpointRedisStore, BudgetRedisStore, RateLimitRedisStore, CostRedisStore, TaskQueue, EventPublisher) — mỗi store nhận Redis client.
 
-    # Verify connections
-    async with db_engine.begin() as conn:
-        await conn.execute(text("SELECT 1"))
-    await redis.ping()
+**Phase 5 — Cross-cutting:** Tạo `LocalGovernance` với AuditSink (audit_repo + buffer_size từ settings), RetentionScheduler (db_session_factory), DataClassifier, CostAggregator (cost_store + cost_repo). Tạo `EventBus` với EventPublisher và 3 consumers: SSEConsumer, TraceConsumer (tracer_provider), GovernanceConsumer (governance). Tạo `GuardrailsEngine` với SchemaValidator, InjectionDetector, ToolPermissionEnforcer, BudgetEnforcer (budget_store), RateLimitEnforcer (rate_limit_store), HITLGate (session_store + event_bus).
 
-    # ── Phase 2: Tracing ──
-    tracer_provider = setup_tracing(settings.tracing)
+**Phase 6 — Services:** Tạo `MemoryService` với ShortTermMemory (session_store), WorkingMemory (session_store), llm_gateway. Tạo `ToolService` với ToolRegistry (tool_repo), ToolDiscoveryService (mcp_client_manager), SchemaConverter, ToolRuntime (mcp_client_manager). Tạo `AgentService` (agent_repo, tool_service) và `SessionService` (session_repo, session_store, task_queue, event_bus).
 
-    # ── Phase 3: Providers ──
-    llm_gateway = AnthropicGateway(
-        config=AnthropicGatewayConfig(
-            api_key=settings.llm.anthropic_api_key,
-            default_timeout=settings.llm.default_timeout,
-            max_connections=settings.llm.max_connections,
-            max_keepalive=settings.llm.max_keepalive,
-        )
-    )
+Sau đó compose tất cả thành **AppState**, gắn vào `app.state.app`. Start background tasks: `event_bus.start()` và `governance.start()` (audit flush timer, retention scheduler).
 
-    mcp_client_manager = MCPClientManager(redis=redis)
-
-    # ── Phase 4: Stores ──
-    agent_repo = AgentRepository(db_session_factory)
-    session_repo = SessionRepository(db_session_factory)
-    message_repo = MessageRepository(db_session_factory)
-    checkpoint_repo = CheckpointRepository(db_session_factory)
-    tool_repo = ToolRepository(db_session_factory)
-    audit_repo = AuditRepository(db_session_factory)
-    cost_repo = CostRepository(db_session_factory)
-
-    session_store = SessionRedisStore(redis)
-    checkpoint_store = CheckpointRedisStore(redis)
-    budget_store = BudgetRedisStore(redis)
-    rate_limit_store = RateLimitRedisStore(redis)
-    cost_store = CostRedisStore(redis)
-    task_queue = TaskQueue(redis)
-    event_publisher = EventPublisher(redis)
-
-    # ── Phase 5: Cross-cutting ──
-    governance = LocalGovernance(
-        audit_sink=AuditSink(audit_repo, buffer_size=settings.governance.audit_buffer_size),
-        retention=RetentionScheduler(db_session_factory),
-        classifier=DataClassifier(),
-        cost_aggregator=CostAggregator(cost_store, cost_repo),
-    )
-
-    event_bus = EventBus(
-        publisher=event_publisher,
-        consumers=[
-            SSEConsumer(),
-            TraceConsumer(tracer_provider),
-            GovernanceConsumer(governance),
-        ],
-    )
-
-    guardrails_engine = GuardrailsEngine(
-        schema_validator=SchemaValidator(),
-        injection_detector=InjectionDetector(),
-        tool_permission=ToolPermissionEnforcer(),
-        budget_enforcer=BudgetEnforcer(budget_store),
-        rate_limiter=RateLimitEnforcer(rate_limit_store),
-        hitl_gate=HITLGate(session_store, event_bus),
-    )
-
-    # ── Phase 6: Services ──
-    memory_service = MemoryService(
-        short_term=ShortTermMemory(session_store),
-        working=WorkingMemory(session_store),
-        llm_gateway=llm_gateway,
-    )
-
-    tool_service = ToolService(
-        registry=ToolRegistry(tool_repo),
-        discovery=ToolDiscoveryService(mcp_client_manager),
-        schema_converter=SchemaConverter(),
-        runtime=ToolRuntime(mcp_client_manager),
-    )
-
-    agent_service = AgentService(agent_repo, tool_service)
-    session_service = SessionService(session_repo, session_store, task_queue, event_bus)
-
-    # ── Compose AppState ──
-    state = AppState(
-        settings=settings,
-        db_engine=db_engine,
-        db_session_factory=db_session_factory,
-        redis=redis,
-        llm_gateway=llm_gateway,
-        mcp_client_manager=mcp_client_manager,
-        agent_service=agent_service,
-        session_service=session_service,
-        tool_service=tool_service,
-        memory_service=memory_service,
-        guardrails_engine=guardrails_engine,
-        event_bus=event_bus,
-        governance=governance,
-    )
-
-    app.state.app = state
-
-    # ── Start background tasks ──
-    await event_bus.start()
-    await governance.start()                   # audit flush timer, retention scheduler
-
-    yield
-
-    # ── Shutdown (reverse order) ──
-    await governance.stop()
-    await event_bus.stop()
-    await mcp_client_manager.close_all()
-    await redis.aclose()
-    await db_engine.dispose()
-```
+Khi yield xong (app shutdown), dọn dẹp theo thứ tự ngược: governance.stop() → event_bus.stop() → mcp_client_manager.close_all() → redis.aclose() → db_engine.dispose().
 
 ### 5.4 FastAPI Dependency Providers
 
-```python
-# src/api/deps.py
+File `src/api/deps.py` định nghĩa các dependency provider functions cho FastAPI:
 
-from fastapi import Depends, Request
-from sqlalchemy.ext.asyncio import AsyncSession
+- **get_app_state(request)** → Lấy AppState từ `request.app.state.app`.
+- **get_db_session(state)** → Async generator, tạo AsyncSession từ `state.db_session_factory()` và yield session (auto cleanup khi request kết thúc). Depends vào get_app_state.
+- **get_agent_service(state)** → Trả về `state.agent_service`. Depends vào get_app_state.
+- **get_session_service(state)** → Trả về `state.session_service`. Depends vào get_app_state.
+- **get_tool_service(state)** → Trả về `state.tool_service`. Depends vào get_app_state.
 
-
-def get_app_state(request: Request) -> AppState:
-    return request.app.state.app
-
-
-async def get_db_session(state: AppState = Depends(get_app_state)) -> AsyncSession:
-    async with state.db_session_factory() as session:
-        yield session
-
-
-def get_agent_service(state: AppState = Depends(get_app_state)) -> AgentService:
-    return state.agent_service
-
-
-def get_session_service(state: AppState = Depends(get_app_state)) -> SessionService:
-    return state.session_service
-
-
-def get_tool_service(state: AppState = Depends(get_app_state)) -> ToolService:
-    return state.tool_service
-
-
-# Usage in routes:
-@router.post("/agents")
-async def create_agent(
-    body: CreateAgentRequest,
-    agent_service: AgentService = Depends(get_agent_service),
-    tenant_id: str = Depends(get_current_tenant),
-):
-    return await agent_service.create(tenant_id, body)
-```
+Cách sử dụng trong routes: các route handler khai báo dependency qua `Depends(get_agent_service)`, ví dụ endpoint `POST /agents` nhận `agent_service: AgentService = Depends(get_agent_service)` và `tenant_id: str = Depends(get_current_tenant)`, sau đó gọi `agent_service.create(tenant_id, body)`.
 
 ### 5.5 Executor Worker — Separate Process
 
-```python
-# src/engine/worker.py
+Class **TaskWorker** chạy như process(es) riêng biệt, consume ExecutionTask từ Redis Streams. Worker có AppState riêng (DB pool, Redis, providers) — KHÔNG shared với API process.
 
-class TaskWorker:
-    """
-    Runs as separate process(es). Consumes ExecutionTask from Redis Streams.
-    Has its own AppState (DB pool, Redis, providers) — NOT shared with API process.
-    """
+TaskWorker nhận AppState qua constructor và tạo `AgentExecutor` với các dependencies: llm_gateway, tool_runtime (từ tool_service.runtime), memory_manager (memory_service), CheckpointManager (CheckpointRedisStore + CheckpointRepository), BudgetController (BudgetRedisStore), EventEmitter (event_bus), guardrails (guardrails_engine).
 
-    def __init__(self, state: AppState):
-        self.state = state
-        self.executor = AgentExecutor(
-            llm_gateway=state.llm_gateway,
-            tool_runtime=state.tool_service.runtime,
-            memory_manager=state.memory_service,
-            checkpoint_manager=CheckpointManager(
-                redis_store=CheckpointRedisStore(state.redis),
-                pg_repo=CheckpointRepository(state.db_session_factory),
-            ),
-            budget_controller=BudgetController(BudgetRedisStore(state.redis)),
-            event_emitter=EventEmitter(state.event_bus),
-            guardrails=state.guardrails_engine,
-        )
-
-    async def run(self):
-        """Main consumer loop. See event-bus.md for Redis Streams details."""
-        ...
-```
+Method `run()` là main consumer loop — xem chi tiết tại [event-bus.md](08-event-bus.md) cho Redis Streams details.
 
 ### 5.6 Testing — Dependency Override
 
-```python
-# tests/conftest.py
+File `tests/conftest.py` định nghĩa shared fixtures:
 
-import pytest
-from fakeredis.aioredis import FakeRedis
-
-
-@pytest.fixture
-def mock_redis():
-    return FakeRedis()
-
-
-@pytest.fixture
-def mock_llm_gateway():
-    """Returns a mock that records calls and returns canned responses."""
-    ...
-
-
-@pytest.fixture
-def app_state(mock_redis, mock_llm_gateway, test_db_session_factory):
-    return AppState(
-        settings=Settings(environment="test"),
-        redis=mock_redis,
-        llm_gateway=mock_llm_gateway,
-        db_session_factory=test_db_session_factory,
-        ...
-    )
-```
+- **mock_redis** — Fixture trả về `FakeRedis()` (từ `fakeredis.aioredis`) để test mà không cần Redis server thật.
+- **mock_llm_gateway** — Fixture trả về mock object ghi lại các calls và trả về canned responses.
+- **app_state(mock_redis, mock_llm_gateway, test_db_session_factory)** — Fixture tạo AppState với `Settings(environment="test")`, mock_redis, mock_llm_gateway, test_db_session_factory, và các mock khác.
 
 ---
 
@@ -789,32 +514,9 @@ migrations/
 
 ### 6.2 Alembic Configuration
 
-```ini
-# alembic.ini
-[alembic]
-script_location = migrations
-sqlalchemy.url = driver://user:pass@localhost/dbname  # overridden by env.py
-```
+File **alembic.ini** cấu hình Alembic với `script_location = migrations`. Thuộc tính `sqlalchemy.url` được set placeholder (sẽ bị override bởi env.py lúc runtime).
 
-```python
-# migrations/env.py
-from alembic import context
-from sqlalchemy.ext.asyncio import create_async_engine
-from src.core.config import get_settings
-
-settings = get_settings()
-
-def run_migrations_online():
-    """Run migrations with async engine."""
-    connectable = create_async_engine(settings.database.dsn)
-
-    async def do_run():
-        async with connectable.connect() as connection:
-            await connection.run_sync(do_migrations, connection)
-
-    import asyncio
-    asyncio.run(do_run())
-```
+File **migrations/env.py** chịu trách nhiệm chạy migrations với async engine. Nó import `get_settings()` để lấy database DSN, tạo async engine bằng `create_async_engine(settings.database.dsn)`, rồi thực thi migrations trong async context (sử dụng `asyncio.run()`). Connections được mở qua `connectable.connect()` và migrations chạy qua `connection.run_sync()`.
 
 ### 6.3 Migration Strategy
 
@@ -829,33 +531,16 @@ def run_migrations_online():
 
 ### 6.4 Initial Migration Scope
 
-```python
-# migrations/versions/001_initial_schema.py
-
-"""
-Initial schema: tenants, agents, sessions, messages,
-checkpoints (deltas + snapshots), mcp_servers, tools,
-audit_events (partitioned), cost_events, cost_daily_aggregates.
-
-DDL definitions: see data-models.md Section 10.
-"""
-```
+File `migrations/versions/001_initial_schema.py` tạo initial schema bao gồm: tenants, agents, sessions, messages, checkpoints (deltas + snapshots), mcp_servers, tools, audit_events (partitioned), cost_events, cost_daily_aggregates. DDL definitions tham chiếu tại [data-models.md](01-data-models.md) Section 10.
 
 ### 6.5 Commands
 
-```bash
-# Create new migration
-alembic revision --autogenerate -m "add_xyz_table"
+Các lệnh Alembic thường dùng:
 
-# Run migrations
-alembic upgrade head
-
-# Rollback one step
-alembic downgrade -1
-
-# Show current version
-alembic current
-```
+- **Tạo migration mới:** Chạy `alembic revision --autogenerate -m "add_xyz_table"` để tự động generate migration từ model changes.
+- **Chạy migrations:** Chạy `alembic upgrade head` để apply tất cả pending migrations.
+- **Rollback một bước:** Chạy `alembic downgrade -1` để rollback migration gần nhất.
+- **Xem version hiện tại:** Chạy `alembic current` để hiển thị migration version đang active.
 
 ---
 
@@ -863,90 +548,15 @@ alembic current
 
 ### 7.1 API Server
 
-```python
-# src/main.py
+File `src/main.py` là entry point chính cho API server. Nó import `create_app()` từ `src.api.app` để tạo FastAPI app instance. Khi chạy trực tiếp (dưới dạng script), sử dụng `uvicorn.run()` với tham số: module path `"src.main:app"`, host `"0.0.0.0"`, port `8000`, workers `1` (single worker per container, scale via K8s replicas), log_level `"info"`.
 
-import uvicorn
-from src.api.app import create_app
-
-app = create_app()
-
-if __name__ == "__main__":
-    uvicorn.run(
-        "src.main:app",
-        host="0.0.0.0",
-        port=8000,
-        workers=1,           # single worker per container, scale via K8s replicas
-        log_level="info",
-    )
-```
-
-```python
-# src/api/app.py
-
-from fastapi import FastAPI
-from src.api.middleware.auth import AuthMiddleware
-from src.api.middleware.tenant import TenantMiddleware
-from src.api.middleware.request_id import RequestIDMiddleware
-from src.api.middleware.error_handler import error_handler_middleware
-
-
-def create_app() -> FastAPI:
-    settings = get_settings()
-
-    app = FastAPI(
-        title="Agent Platform API",
-        version="0.1.0",
-        lifespan=lifespan,
-    )
-
-    # Middleware (execution order: bottom → top)
-    app.add_middleware(RequestIDMiddleware)
-    app.add_middleware(TenantMiddleware)
-    app.add_middleware(AuthMiddleware, settings=settings.auth)
-    app.add_exception_handler(Exception, error_handler_middleware)
-
-    # Routes
-    app.include_router(agents_router, prefix="/api/v1")
-    app.include_router(sessions_router, prefix="/api/v1")
-    app.include_router(messages_router, prefix="/api/v1")
-    app.include_router(tools_router, prefix="/api/v1")
-    app.include_router(audit_router, prefix="/api/v1")
-    app.include_router(stream_router, prefix="/api/v1")
-
-    # Health check
-    @app.get("/health")
-    async def health():
-        return {"status": "ok"}
-
-    return app
-```
+File `src/api/app.py` định nghĩa hàm `create_app()` trả về FastAPI instance với title "Agent Platform API", version "0.1.0", và lifespan function. Middleware được đăng ký theo thứ tự thực thi bottom-to-top: RequestIDMiddleware, TenantMiddleware, AuthMiddleware (nhận settings.auth), và error_handler_middleware (exception handler). Routes được mount với prefix `/api/v1`: agents_router, sessions_router, messages_router, tools_router, audit_router, stream_router. Một health check endpoint `GET /health` trả về `{"status": "ok"}`.
 
 ### 7.2 Executor Worker
 
-```bash
-# Run as separate process
-python -m src.engine.worker
-```
+Executor worker chạy như separate process bằng lệnh `python -m src.engine.worker`.
 
-```python
-# src/engine/worker.py (entry point section)
-
-async def main():
-    """Worker entry point. Creates its own AppState, starts consuming tasks."""
-    settings = get_settings()
-
-    # Build worker-specific AppState (same infra, no HTTP server)
-    state = await build_worker_state(settings)
-
-    worker = TaskWorker(state)
-    await worker.run()
-
-
-if __name__ == "__main__":
-    import asyncio
-    asyncio.run(main())
-```
+File `src/engine/worker.py` (phần entry point) định nghĩa hàm async `main()` — worker entry point. Hàm này tạo AppState riêng cho worker (cùng infrastructure nhưng không có HTTP server) bằng `build_worker_state(settings)`, sau đó tạo `TaskWorker(state)` và gọi `worker.run()`. Khi file được chạy trực tiếp, nó sử dụng `asyncio.run(main())`.
 
 ---
 
@@ -954,93 +564,22 @@ if __name__ == "__main__":
 
 ### 8.1 docker-compose.yml
 
-```yaml
-version: "3.9"
+File `deploy/docker/docker-compose.yml` (version 3.9) định nghĩa các services cho local development:
 
-services:
-  api:
-    build:
-      context: .
-      dockerfile: deploy/docker/Dockerfile
-    ports:
-      - "8000:8000"
-    env_file: .env
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+| Service | Image / Build | Ports | Dependencies | Notes |
+|---------|---------------|-------|-------------|-------|
+| api | Build từ `deploy/docker/Dockerfile` | 8000:8000 | postgres (healthy), redis (healthy) | Load env từ `.env` |
+| worker | Build từ `deploy/docker/Dockerfile.worker` | (none) | postgres (healthy), redis (healthy) | Load env từ `.env`, replicas: 2 |
+| postgres | postgres:16-alpine | 5432:5432 | (none) | DB: agent_platform, user: postgres, password: localdev. Volume: pgdata. Healthcheck: pg_isready mỗi 5s |
+| redis | redis:7-alpine | 6379:6379 | (none) | Healthcheck: redis-cli ping mỗi 5s |
 
-  worker:
-    build:
-      context: .
-      dockerfile: deploy/docker/Dockerfile.worker
-    env_file: .env
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    deploy:
-      replicas: 2
-
-  postgres:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_DB: agent_platform
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: localdev
-    ports:
-      - "5432:5432"
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
-
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
-
-volumes:
-  pgdata:
-```
+Volume `pgdata` được khai báo để persist PostgreSQL data.
 
 ### 8.2 Dockerfile
 
-```dockerfile
-# deploy/docker/Dockerfile
-FROM python:3.12-slim
+**Dockerfile (API server)** tại `deploy/docker/Dockerfile`: Base image `python:3.12-slim`. Working directory `/app`. Copy `pyproject.toml` rồi chạy `pip install --no-cache-dir .` để cài dependencies. Copy `src/` và `migrations/` vào image. Expose port 8000. Command mặc định: `uvicorn src.main:app --host 0.0.0.0 --port 8000`.
 
-WORKDIR /app
-COPY pyproject.toml .
-RUN pip install --no-cache-dir .
-COPY src/ src/
-COPY migrations/ migrations/
-
-EXPOSE 8000
-CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]
-```
-
-```dockerfile
-# deploy/docker/Dockerfile.worker
-FROM python:3.12-slim
-
-WORKDIR /app
-COPY pyproject.toml .
-RUN pip install --no-cache-dir .
-COPY src/ src/
-
-CMD ["python", "-m", "src.engine.worker"]
-```
+**Dockerfile (Worker)** tại `deploy/docker/Dockerfile.worker`: Base image `python:3.12-slim`. Working directory `/app`. Copy `pyproject.toml` rồi chạy `pip install --no-cache-dir .` để cài dependencies. Copy `src/` vào image (không cần migrations). Command mặc định: `python -m src.engine.worker`.
 
 ---
 
