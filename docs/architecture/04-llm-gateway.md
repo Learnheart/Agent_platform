@@ -4,7 +4,7 @@
 > **Ngày tạo:** 2026-03-25
 > **Ngày cập nhật:** 2026-03-26
 > **Parent:** [Architecture Overview](00-overview.md)
-> **Status:** CONFIRMED — Direct Anthropic SDK
+> **Status:** CONFIRMED — Multi-provider (Anthropic SDK + OpenAI-compatible)
 
 ---
 
@@ -12,28 +12,28 @@
 
 LLM Gateway là abstraction layer giữa Executor và LLM providers. Mọi LLM call đi qua component này.
 
-- Phase 1: Anthropic (Claude) only — direct SDK
-- Phase 2: Thêm OpenAI, Gemini adapters qua cùng `LLMGateway` protocol
+- Phase 1: Multi-provider — Anthropic (Claude) via `anthropic` SDK + Groq, self-hosted (LM Studio) via `openai` SDK (OpenAI-compatible)
+- Phase 2: Response caching (Redis), advanced model routing rules, fallback logic
 
 ### 1.1 Quyết Định Kiến Trúc
 
-**ADR-014: Direct Anthropic SDK cho Phase 1**
+**ADR-014: Multi-provider via Direct SDKs**
 
-| | Direct SDK | LiteLLM |
+| | Direct SDKs (anthropic + openai) | LiteLLM |
 |---|---|---|
-| Phase 1 cần | 1 provider | 1 provider |
-| Dependencies | `anthropic` (1 lib) | `litellm` + proxy service |
+| Phase 1 cần | Multi-provider | Multi-provider |
+| Dependencies | `anthropic` + `openai` (2 libs) | `litellm` + proxy service |
 | Streaming control | Full (SDK events) | Proxy layer thêm latency |
 | Tool use parsing | SDK native | LiteLLM adapter (potential bugs) |
 | Prompt caching | Anthropic API native | Phải qua LiteLLM mapping |
 | Debug | Direct stack trace | Thêm proxy layer |
-| Phase 2 effort | Viết adapter (~2-3 ngày/provider) | Config thêm provider |
+| OpenAI-compatible providers | `openai` SDK + custom `base_url` (Groq, LM Studio, ...) | Config thêm provider |
 
-**Quyết định:** Direct Anthropic SDK. Lý do:
-1. Phase 1 chỉ cần 1 provider → LiteLLM là overhead không cần thiết
-2. Full control over streaming, tool use, prompt caching
-3. `LLMGateway` protocol đã abstract sẵn → Phase 2 thêm adapter dễ dàng
-4. Ít dependency = ít risk
+**Quyết định:** Direct SDKs (`anthropic` + `openai`). Lý do:
+1. `anthropic` SDK cho Anthropic models — full control over streaming, tool use, prompt caching
+2. `openai` SDK cho OpenAI-compatible providers (Groq, LM Studio/self-hosted) — chỉ cần thay `base_url`
+3. `LLMGateway` protocol abstract sẵn → mỗi provider group 1 adapter class
+4. 2 dependencies vẫn ít hơn LiteLLM stack, full control, ít risk
 
 ---
 
@@ -418,26 +418,37 @@ Mỗi LLM call tạo 1 OpenTelemetry span với tên `"llm.chat"`. Các attribut
 | 3 | Connection pooling | httpx pool: 100 max, 20 keepalive | Phase 1 target 1000 sessions, ~100 concurrent LLM calls |
 | 4 | Streaming timeout | httpx read timeout (120s inter-chunk) | SDK + httpx tự handle. Không cần custom timer |
 | 5 | Cost calculation | Hardcode pricing table | Pricing ít thay đổi. Cập nhật khi deploy. Tránh runtime dependency |
-| 6 | Build vs Buy | Direct Anthropic SDK | Phase 1 chỉ cần 1 provider. LiteLLM là overhead. Adapter pattern cho Phase 2 |
+| 6 | Build vs Buy | Direct SDKs (anthropic + openai) | Multi-provider Phase 1 qua 2 SDK. LiteLLM là overhead. Adapter pattern với `LLMGateway` protocol |
 
 ---
 
-## 11. Phase 2 Extensibility
+## 11. Multi-Provider Architecture (Phase 1)
 
-Phase 2 mở rộng multi-provider bằng cách thêm các class implement `LLMGateway` protocol:
+Phase 1 hỗ trợ multi-provider qua 2 gateway classes implement `LLMGateway` protocol:
 
-**OpenAIGateway** — implement `LLMGateway` cho OpenAI models, cung cấp cùng 3 methods: `chat`, `chat_stream`, `count_tokens`.
+**AnthropicGateway** — implement `LLMGateway` cho Anthropic models (xem Section 3).
+
+**OpenAICompatibleGateway** — implement `LLMGateway` cho mọi OpenAI-compatible provider (Groq, LM Studio/self-hosted, ...).
+
+- Constructor nhận `OpenAICompatibleGatewayConfig` bao gồm: `base_url` (endpoint URL), `api_key`, `provider_name` (e.g., `"groq"`, `"lmstudio"`), `default_llm_config`, `pricing`.
+- Sử dụng `openai.AsyncOpenAI` client với custom `base_url`.
+- Implement đủ 3 methods: `chat`, `chat_stream`, `count_tokens`.
+- `count_tokens`: sử dụng `tiktoken` để ước tính (OpenAI-compatible providers không có count_tokens API). Fallback: estimate từ character count nếu model không có tokenizer mapping.
+- Streaming: map OpenAI streaming events (`chat.completions.chunk`) sang `LLMStreamEvent`.
+- Tool use: map OpenAI tool_calls format sang platform `ToolCall`.
 
 **LLMRouter** — router chọn gateway dựa vào provider name:
-- Constructor nhận `gateways: dict[str, LLMGateway]` — mapping từ provider name đến gateway instance (ví dụ: `{"anthropic": AnthropicGateway(...), "openai": OpenAIGateway(...)}`).
+- Constructor nhận `gateways: dict[str, LLMGateway]` — mapping từ provider name đến gateway instance (ví dụ: `{"anthropic": AnthropicGateway(...), "groq": OpenAICompatibleGateway(...), "lmstudio": OpenAICompatibleGateway(...)}`).
 - Method `get_gateway(provider: str) -> LLMGateway` trả về gateway tương ứng.
+- Raise `LLMError(category=PROVIDER_NOT_FOUND)` nếu provider không tồn tại.
 
-Phase 2 scope:
-- `OpenAIGateway` adapter
-- `GeminiGateway` adapter
-- `LLMRouter` với fallback logic
+### 11.1 Phase 2 Extensibility
+
+Phase 2 scope (advanced features):
 - Response caching (Redis)
-- Model routing rules (per-agent config)
+- Advanced model routing rules (per-agent config)
+- Fallback logic (auto-switch provider khi lỗi)
+- Load balancing across multiple instances of same provider
 
 ---
 
@@ -446,13 +457,15 @@ Phase 2 scope:
 | Component | Technology | Phase |
 |-----------|-----------|-------|
 | Anthropic client | `anthropic` Python SDK | 1 |
+| OpenAI-compatible client | `openai` Python SDK (Groq, LM Studio, ...) | 1 |
 | HTTP client | `httpx` (async, bundled with anthropic SDK) | 1 |
-| Token counting | Anthropic `count_tokens` API | 1 |
+| Token counting (Anthropic) | Anthropic `count_tokens` API | 1 |
+| Token counting (OpenAI-compat) | `tiktoken` / character estimate | 1 |
 | Prompt caching | Anthropic `cache_control` API | 1 |
 | Cost calculation | Hardcoded pricing table | 1 |
-| Multi-provider adapters | Custom (OpenAIGateway, GeminiGateway) | 2 |
+| Model routing | `LLMRouter` — provider-based dispatch | 1 |
 | Response caching | Redis | 2 |
-| Model routing | LLMRouter + agent config | 2 |
+| Advanced routing | Fallback logic, load balancing, per-agent config | 2 |
 
 ---
 

@@ -20,7 +20,7 @@ Tài liệu kiến trúc gồm **10 files**. Đọc theo thứ tự dưới đâ
      │                                                       │
  03-planning          Execution Engine — ReAct, checkpoint   │
      │                                                       │
- 04-llm-gateway       LLM calls — Anthropic SDK, streaming   │
+ 04-llm-gateway       LLM calls — multi-provider, streaming   │
      │                                                       │
  05-memory            Context management — buffer, summarizer │
      │                                                       │
@@ -71,8 +71,8 @@ Tài liệu kiến trúc gồm **10 files**. Đọc theo thứ tự dưới đâ
                                     |                   |         |
   End User ─────────────>  Session API + SSE            v         v
                            (chat với agent)       LLM Providers  MCP Servers
-                                                  (Anthropic     (DB, GitHub,
-                                                   Phase 1)       Slack, ...)
+                                                  (Anthropic,    (DB, GitHub,
+                                                  Groq, LMS)     Slack, ...)
 ```
 
 ### Phase Scope
@@ -80,7 +80,7 @@ Tài liệu kiến trúc gồm **10 files**. Đọc theo thứ tự dưới đâ
 | Khu vực | Phase 1 | Phase 2 |
 |---------|---------|---------|
 | Execution Engine | ReAct | Plan-then-Execute, Reflexion |
-| LLM Provider | Claude (Anthropic) | OpenAI adapter, Gemini |
+| LLM Provider | Anthropic, Groq, LM Studio (self-hosted) | Advanced routing, fallback, load balancing |
 | Real-time Streaming | SSE (Server-Sent Events) | WebSocket |
 | Memory | Short-term + Working | Long-term (vector store, RAG) |
 | Multi-tenant | Single-tenant | Multi-tenant, RBAC |
@@ -129,8 +129,8 @@ Tài liệu kiến trúc gồm **10 files**. Đọc theo thứ tự dưới đâ
 |  +---------+   +---------------+   +---------------+            |
 |  |  State  |   |  LLM Gateway  |   | Tool Runtime  |            |
 |  |  Store  |   |               |   | (MCP Client)  |            |
-|  |(Redis+PG|   | Anthropic     |   |               |            |
-|  |)        |   | (Phase 1)     |   | +---++---+    |            |
+|  |(Redis+PG|   | Anthropic,    |   |               |            |
+|  |)        |   | Groq, LMS     |   | +---++---+    |            |
 |  +---------+   +---------------+   | |MCP||MCP|    |            |
 |  +---------+                       | |Svr||Svr|    |            |
 |  | Memory  |   +---------------+   | +---++---+    |            |

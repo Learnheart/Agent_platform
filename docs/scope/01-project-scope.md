@@ -90,8 +90,8 @@ Platform phục vụ **hai đối tượng** với vai trò khác nhau:
         │                    │                    │
         ▼                    ▼                    ▼
    LLM Providers      MCP Tool Servers      External Systems
-   (Claude, GPT,      (DB, API, File,       (CRM, ITSM,
-    Gemini, Local)      Custom...)            ERP...)
+   (Anthropic, Groq,  (DB, API, File,       (CRM, ITSM,
+    LM Studio, ...)    Custom...)            ERP...)
 ```
 
 ### 2.2 Trong phạm vi (In Scope)
@@ -120,7 +120,7 @@ Platform phục vụ **hai đối tượng** với vai trò khác nhau:
 | Multi-agent orchestration nâng cao | Phức tạp, cần validate single-agent trước | Phase 2 |
 | Edge deployment | Cần runtime riêng, market niche | Phase 3 |
 | A2A protocol support | Protocol còn sớm | Phase 2-3 |
-| Self-hosted LLM hosting | Khác bài toán, dùng provider có sẵn | Không |
+| Self-hosted LLM hosting | Platform kết nối tới self-hosted models (LM Studio) nhưng không tự host model | Không |
 | End-user UI (chatbot widget, embed) | Platform cung cấp Session API, builder tự xây UI cho end user hoặc dùng embed widget (Phase 2) | Phase 2 (embed widget) |
 | Billing & subscription management | Dùng third-party (Stripe) | Phase 2 |
 
@@ -144,6 +144,7 @@ Platform phục vụ **hai đối tượng** với vai trò khác nhau:
 | Tracing | OpenTelemetry instrumentation, basic trace viewer |
 | Auth | API key + OAuth 2.0 |
 | Management UI | Form tạo agent, quản lý session, xem kết quả (config-based) — cho Builder |
+| LLM Gateway | Multi-provider: Anthropic (Claude), Groq, LM Studio (self-hosted) via `LLMGateway` protocol |
 | Cost Tracking | Per-session token usage và cost estimation |
 | Documentation | API docs, getting started guide, architecture guide |
 
@@ -165,7 +166,7 @@ Platform phục vụ **hai đối tượng** với vai trò khác nhau:
 | On-premise Deployment | Helm charts, Kubernetes operator |
 | Long-term Memory | Vector store (pgvector), RAG, knowledge base indexing |
 | Advanced Guardrails | CEL rule engine, classifier-based injection detection, Presidio PII, canary tokens |
-| LLM Providers | Gemini, OpenAI-compatible (Ollama, vLLM) |
+| LLM Advanced Routing | Fallback logic, load balancing, per-agent model config |
 
 ### Phase 3: Ecosystem & Advanced
 **Mục tiêu:** Marketplace, advanced patterns, edge.

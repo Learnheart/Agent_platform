@@ -235,6 +235,7 @@ Project **agent-platform** version 0.1.0 yêu cầu Python >= 3.12. Build system
 | Web framework | uvicorn[standard] | >=0.32, <1.0 | ASGI server |
 | Web framework | sse-starlette | >=2.0, <3.0 | SSE support for FastAPI |
 | LLM providers | anthropic | >=0.42, <1.0 | Anthropic SDK (includes httpx) |
+| LLM providers | openai | >=1.60, <2.0 | OpenAI-compatible SDK (Groq, LM Studio) |
 | MCP | mcp | >=1.0, <2.0 | MCP Python SDK |
 | Database | asyncpg | >=0.30, <1.0 | Async PostgreSQL driver |
 | Database | sqlalchemy | >=2.0, <3.0 | SQL toolkit (async) |

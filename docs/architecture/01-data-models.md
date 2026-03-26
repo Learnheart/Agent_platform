@@ -58,7 +58,7 @@
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| provider | str | "anthropic" | Phase 1: "anthropic" only |
+| provider | str | "anthropic" | Provider name: "anthropic", "groq", "lmstudio", ... |
 | model | str | "claude-sonnet-4-5-20250514" | Tên model |
 | temperature | float | 1.0 | Temperature cho LLM |
 | max_tokens | int | 4096 | Max tokens per LLM call |
@@ -995,7 +995,7 @@ tenants
 | LLMResponse, TokenUsage, LLMConfig | ✅ | | |
 | LLMStreamEvent | ✅ | | |
 | AgentEvent | ✅ | extend (plan events) | |
-| ModelConfig (anthropic only) | ✅ | extend (openai, gemini) | |
+| ModelConfig (multi-provider) | ✅ | extend (advanced routing) | |
 | MemoryConfig (short-term + working) | ✅ | extend (long-term) | extend (episodic) |
 | GuardrailsConfig (hard + soft/circuit breaker) | ✅ | extend (custom rules, PII) | |
 | BudgetConfig, BudgetCheckResult | ✅ | | |

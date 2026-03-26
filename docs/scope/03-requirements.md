@@ -235,16 +235,17 @@ Requirements được phân theo đối tượng sử dụng:
 
 ## 4. Integration Requirements
 
-### 4.1 LLM Providers (Phase 1)
+### 4.1 LLM Providers
 
 | Provider | Priority | Protocol | Phase |
 |----------|----------|----------|-------|
-| Anthropic (Claude) | P0 | Anthropic API | 1 |
+| Anthropic (Claude) | P0 | Anthropic API (`anthropic` SDK) | 1 |
+| Groq | P0 | OpenAI-compatible API (`openai` SDK) | 1 |
+| Self-hosted (LM Studio) | P0 | OpenAI-compatible API (`openai` SDK) | 1 |
 | OpenAI (GPT-4o, o3) | P1 | OpenAI API | 2 |
 | Google (Gemini) | P1 | Gemini API | 2 |
-| OpenAI-compatible (Ollama, vLLM) | P1 | OpenAI-compatible API | 2 |
 
-Phase 1: Claude only. LLM abstraction interface từ đầu, OpenAI adapter Phase 2.
+Phase 1: Multi-provider qua `LLMGateway` protocol — `AnthropicGateway` + `OpenAICompatibleGateway`.
 
 ### 4.2 MCP Tool Servers (Phase 1 test targets)
 
