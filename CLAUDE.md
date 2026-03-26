@@ -79,6 +79,20 @@ Sau khi hoàn thành toàn bộ (code + test pass), phải trình bày **bảng 
 
 ---
 
+## 6. Auto-commit & push khi thay đổi logic
+
+Sau khi hoàn thành thay đổi, **TỰ ĐỘNG commit và push** nếu thay đổi thuộc một trong các loại sau:
+
+- Thay đổi **nội dung logic** trong tài liệu kiến trúc (`docs/architecture/`)
+- Thêm / sửa / xoá **function, class, module** trong source code
+- Thay đổi **data model, interface, contract, hoặc flow**
+
+**KHÔNG cần auto-commit** khi:
+- Fix lỗi nhỏ (typo, formatting, comment) không ảnh hưởng đến kiến trúc hoặc logic
+- Thay đổi chỉ trong phạm vi debug/thử nghiệm chưa hoàn chỉnh
+
+---
+
 ## Reference
 
 - Tổng quan dự án: `PROJECT.md`
