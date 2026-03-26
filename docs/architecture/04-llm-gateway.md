@@ -72,7 +72,7 @@ class LLMGateway(Protocol):
 
 ### 2.2 Data Models
 
-> Canonical definitions trong [`data-models.md`](data-models.md) Section 5. Summary:
+> Canonical definitions trong [`01-data-models.md`](01-data-models.md) Section 5. Summary:
 
 ```python
 @dataclass
@@ -419,7 +419,7 @@ class LLMError(Exception):
         self.cause = cause
 ```
 
-Executor nhận `LLMError` → xử lý theo `ErrorCategory` (xem [`data-models.md`](data-models.md) Section 9.2).
+Executor nhận `LLMError` → xử lý theo `ErrorCategory` (xem [`01-data-models.md`](01-data-models.md) Section 9.2).
 
 ---
 

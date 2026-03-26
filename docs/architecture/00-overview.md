@@ -10,33 +10,33 @@
 Tài liệu kiến trúc gồm **10 files**. Đọc theo thứ tự dưới đây để hiểu hệ thống từ tổng quan → chi tiết, mỗi doc xây trên kiến thức từ doc trước.
 
 ```
- ① 00-overview.md          Bức tranh toàn cảnh — đọc trước nhất
-        │
- ② data-models.md          "Từ vựng" — entities, enums, DB schema, state machine
-        │
- ③ foundation.md           "Nền móng" — project structure, config, DI, dependencies
-        │
-        ├──────────── CORE RUNTIME (đọc theo thứ tự) ────────────┐
-        │                                                          │
- ④ planning.md             Execution Engine — ReAct loop, checkpoint, budget    │
-        │                                                          │
- ⑤ llm-gateway.md          LLM calls — Anthropic SDK, streaming, retry, cost   │
-        │                                                          │
- ⑥ memory.md               Context management — conversation buffer, summarizer │
-        │                                                          │
- ⑦ mcp-tools.md            Tool system — MCP client, registry, invocation       │
-        │                                                          │
-        ├──────────── CROSS-CUTTING (đọc song song được) ────────┤
-        │                                                          │
- ⑧ guardrails.md           Safety — validation, injection detection, HITL       │
-        │                                                          │
- ⑨ event-bus.md            Event Bus, SSE streaming, Task Queue workers         │
-        │                                                          │
- ⑩ governance.md           Audit, retention, classification, cost tracking      │
-        │                                                          │
-        ├──────────── API SURFACE ───────────────────────────────┘
-        │
- ⑪ api-contracts.md        REST endpoints, auth middleware, SSE wire protocol
+ 00-overview          Bức tranh toàn cảnh — đọc trước nhất
+     │
+ 01-data-models       "Từ vựng" — entities, enums, DB schema, state machine
+     │
+ 02-foundation        "Nền móng" — project structure, config, DI, dependencies
+     │
+     ├───────── CORE RUNTIME (đọc theo thứ tự) ───────────┐
+     │                                                       │
+ 03-planning          Execution Engine — ReAct, checkpoint   │
+     │                                                       │
+ 04-llm-gateway       LLM calls — Anthropic SDK, streaming   │
+     │                                                       │
+ 05-memory            Context management — buffer, summarizer │
+     │                                                       │
+ 06-mcp-tools         Tool system — MCP client, invocation    │
+     │                                                       │
+     ├───────── CROSS-CUTTING (đọc song song được) ────────┤
+     │                                                       │
+ 07-guardrails        Safety — validation, injection, HITL    │
+     │                                                       │
+ 08-event-bus         Event Bus, SSE, Task Queue workers      │
+     │                                                       │
+ 09-governance        Audit, retention, cost tracking         │
+     │                                                       │
+     ├───────── API SURFACE ──────────────────────────────┘
+     │
+ 10-api-contracts     REST endpoints, auth, SSE protocol
 ```
 
 **Nếu ít thời gian**, chỉ đọc ①→②→④ là nắm được 70% hệ thống.
@@ -746,16 +746,16 @@ Layer 6: Governance ---- Immutable audit logs + Data classification + Retention 
 
 | Component | Tài liệu | Mô tả |
 |-----------|----------|-------|
-| **Foundation** | [`foundation.md`](foundation.md) | Project setup, pyproject.toml, config management, DI/wiring, Alembic, app lifecycle |
-| **Event Bus & SSE** | [`event-bus.md`](event-bus.md) | Event Bus (Redis Pub/Sub), SSE streaming, Task Queue (Redis Streams), worker pool |
-| **Guardrails** | [`guardrails.md`](guardrails.md) | Input/output validation, prompt injection, policy engine |
-| **Memory** | [`memory.md`](memory.md) | Memory stack, vector store, context management, shared memory |
-| **Planning** | [`planning.md`](planning.md) | ReAct, Plan-then-Execute, checkpoint, budget, orchestration |
-| **MCP & Tools** | [`mcp-tools.md`](mcp-tools.md) | MCP client, tool registry, discovery, invocation, sandbox |
-| **Governance** | [`governance.md`](governance.md) | Audit consolidation, retention policies, data classification, lineage |
-| **LLM Gateway** | [`llm-gateway.md`](llm-gateway.md) | Provider abstraction, token tracking, failover, error taxonomy |
-| **Data Models** | [`data-models.md`](data-models.md) | Canonical data models, DB schema, Redis schema, enums, state machine, error taxonomy |
-| **API Contracts** | [`api-contracts.md`](api-contracts.md) | REST endpoints, request/response schemas, SSE streaming, auth middleware, rate limiting |
+| **Foundation** | [`02-foundation.md`](02-foundation.md) | Project setup, pyproject.toml, config management, DI/wiring, Alembic, app lifecycle |
+| **Event Bus & SSE** | [`08-event-bus.md`](08-event-bus.md) | Event Bus (Redis Pub/Sub), SSE streaming, Task Queue (Redis Streams), worker pool |
+| **Guardrails** | [`07-guardrails.md`](07-guardrails.md) | Input/output validation, prompt injection, policy engine |
+| **Memory** | [`05-memory.md`](05-memory.md) | Memory stack, vector store, context management, shared memory |
+| **Planning** | [`03-planning.md`](03-planning.md) | ReAct, Plan-then-Execute, checkpoint, budget, orchestration |
+| **MCP & Tools** | [`06-mcp-tools.md`](06-mcp-tools.md) | MCP client, tool registry, discovery, invocation, sandbox |
+| **Governance** | [`09-governance.md`](09-governance.md) | Audit consolidation, retention policies, data classification, lineage |
+| **LLM Gateway** | [`04-llm-gateway.md`](04-llm-gateway.md) | Provider abstraction, token tracking, failover, error taxonomy |
+| **Data Models** | [`01-data-models.md`](01-data-models.md) | Canonical data models, DB schema, Redis schema, enums, state machine, error taxonomy |
+| **API Contracts** | [`10-api-contracts.md`](10-api-contracts.md) | REST endpoints, request/response schemas, SSE streaming, auth middleware, rate limiting |
 
 ---
 

@@ -1150,7 +1150,7 @@ class ErrorDetail(BaseModel):
 
 ### 6.2 Error Codes Table
 
-> Xem [`data-models.md`](data-models.md) Section 9.3 cho full list.
+> Xem [`01-data-models.md`](01-data-models.md) Section 9.3 cho full list.
 
 | HTTP | Code | When |
 |------|------|------|

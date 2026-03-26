@@ -68,8 +68,8 @@ class AgentToolsConfig(BaseModel):
 ```
 
 > **ExecutionConfig:** Xem Section 2.2
-> **MemoryConfig:** Đã định nghĩa chi tiết trong [`memory.md`](memory.md) Section 5
-> **GuardrailsConfig:** Đã định nghĩa chi tiết trong [`guardrails.md`](guardrails.md) Section 4.1
+> **MemoryConfig:** Đã định nghĩa chi tiết trong [`05-memory.md`](05-memory.md) Section 5
+> **GuardrailsConfig:** Đã định nghĩa chi tiết trong [`07-guardrails.md`](07-guardrails.md) Section 4.1
 
 ### 1.3 Session
 
@@ -145,7 +145,7 @@ class ExecutionTrigger(BaseModel):
 
 ### 2.2 ExecutionConfig
 
-> Đã định nghĩa trong [`planning.md`](planning.md) Section 5. Canonical definition:
+> Đã định nghĩa trong [`03-planning.md`](03-planning.md) Section 5. Canonical definition:
 
 ```python
 class ExecutionConfig(BaseModel):
@@ -242,7 +242,7 @@ class ContextPayload(BaseModel):
 
 ### 2.5 BudgetCheckResult
 
-> Đã định nghĩa trong [`planning.md`](planning.md) Section 2.7.
+> Đã định nghĩa trong [`03-planning.md`](03-planning.md) Section 2.7.
 
 ```python
 class BudgetCheckResult(BaseModel):
@@ -263,7 +263,7 @@ class BudgetCheck(BaseModel):
 
 ## 3. Checkpoint Models
 
-> Strategy: delta-based — save incremental changes per step, full snapshot every N steps hoặc session end. Xem [`planning.md`](planning.md) Section 2.6.
+> Strategy: delta-based — save incremental changes per step, full snapshot every N steps hoặc session end. Xem [`03-planning.md`](03-planning.md) Section 2.6.
 
 ### 3.1 CheckpointDelta
 
@@ -303,8 +303,8 @@ class ToolCall(BaseModel):
     arguments: dict                  # tool input arguments
 ```
 
-> **ToolInfo, MCPServerConfig:** Đã định nghĩa chi tiết trong [`mcp-tools.md`](mcp-tools.md) Section 2.1-2.2
-> **ToolResult:** Đã định nghĩa chi tiết trong [`mcp-tools.md`](mcp-tools.md) Section 2.2.6
+> **ToolInfo, MCPServerConfig:** Đã định nghĩa chi tiết trong [`06-mcp-tools.md`](06-mcp-tools.md) Section 2.1-2.2
+> **ToolResult:** Đã định nghĩa chi tiết trong [`06-mcp-tools.md`](06-mcp-tools.md) Section 2.2.6
 
 ### 4.2 ToolResult (Canonical)
 
@@ -324,7 +324,7 @@ class ToolResult(BaseModel):
 
 ## 5. LLM Models
 
-> Đã định nghĩa trong [`llm-gateway.md`](llm-gateway.md) Section 2. Canonical definitions:
+> Đã định nghĩa trong [`04-llm-gateway.md`](04-llm-gateway.md) Section 2. Canonical definitions:
 
 ### 5.1 LLMResponse
 
@@ -479,7 +479,7 @@ class StepType(str, Enum):
 
 ### 7.3 ErrorCategory
 
-> Đã định nghĩa trong [`planning.md`](planning.md) Section 4.1.
+> Đã định nghĩa trong [`03-planning.md`](03-planning.md) Section 4.1.
 
 ```python
 class ErrorCategory(str, Enum):
@@ -498,7 +498,7 @@ class ErrorCategory(str, Enum):
 
 ### 7.4 DataSensitivity
 
-> Đã định nghĩa trong [`governance.md`](governance.md) Section 4.3.1.
+> Đã định nghĩa trong [`09-governance.md`](09-governance.md) Section 4.3.1.
 
 ```python
 class DataSensitivity(str, Enum):
@@ -591,7 +591,7 @@ class PlatformError(BaseModel):
 
 ### 9.2 Retry Policy Defaults
 
-> Từ [`planning.md`](planning.md) Section 4.1.
+> Từ [`03-planning.md`](03-planning.md) Section 4.1.
 
 | Error Category | max_retries | backoff_base (s) | multiplier | max (s) |
 |---|---|---|---|---|
@@ -801,7 +801,7 @@ CREATE POLICY tenant_isolation ON checkpoints_snapshots
 
 ### 10.7 tools
 
-> Đã định nghĩa trong [`mcp-tools.md`](mcp-tools.md) Section 2.1.1. Xem doc gốc cho full DDL.
+> Đã định nghĩa trong [`06-mcp-tools.md`](06-mcp-tools.md) Section 2.1.1. Xem doc gốc cho full DDL.
 
 ```sql
 CREATE TABLE tools (
@@ -840,7 +840,7 @@ CREATE INDEX idx_tools_namespace ON tools (tenant_id, namespace);
 
 ### 10.8 mcp_servers
 
-> Đã định nghĩa trong [`mcp-tools.md`](mcp-tools.md) Section 2.2.2. Xem doc gốc cho full DDL.
+> Đã định nghĩa trong [`06-mcp-tools.md`](06-mcp-tools.md) Section 2.2.2. Xem doc gốc cho full DDL.
 
 ```sql
 CREATE TABLE mcp_servers (
@@ -879,7 +879,7 @@ CREATE POLICY tenant_isolation ON mcp_servers
 
 ### 10.9 audit_events
 
-> Đã định nghĩa trong [`governance.md`](governance.md) Section 4.1.3. Partitioned by month, append-only.
+> Đã định nghĩa trong [`09-governance.md`](09-governance.md) Section 4.1.3. Partitioned by month, append-only.
 
 ```sql
 CREATE TABLE audit_events (
@@ -927,7 +927,7 @@ CREATE INDEX idx_audit_outcome ON audit_events (outcome, timestamp DESC)
 
 ### 10.10 cost_events
 
-> Đã định nghĩa trong [`governance.md`](governance.md) Section 4.4.
+> Đã định nghĩa trong [`09-governance.md`](09-governance.md) Section 4.4.
 
 ```sql
 CREATE TABLE cost_events (
@@ -976,7 +976,7 @@ CREATE TABLE cost_daily_aggregates (
 
 ### 10.12 memories
 
-> Phase 2. Đã định nghĩa trong [`memory.md`](memory.md) Section 3.4.
+> Phase 2. Đã định nghĩa trong [`05-memory.md`](05-memory.md) Section 3.4.
 
 ```sql
 CREATE TABLE memories (

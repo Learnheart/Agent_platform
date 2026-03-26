@@ -11,12 +11,16 @@
 1. Xác định module/component liên quan (Execution Engine, Memory, Guardrails, MCP Tools, LLM Gateway, Planning, Governance, ...).
 2. Đọc tài liệu kiến trúc tương ứng trong `docs/architecture/` để nắm rõ thiết kế:
    - Tổng quan: `docs/architecture/00-overview.md`
-   - Guardrails: `docs/architecture/guardrails.md`
-   - Memory: `docs/architecture/memory.md`
-   - Planning: `docs/architecture/planning.md`
-   - MCP & Tools: `docs/architecture/mcp-tools.md`
-   - LLM Gateway: `docs/architecture/llm-gateway.md`
-   - Governance: `docs/architecture/governance.md`
+   - Data Models: `docs/architecture/01-data-models.md`
+   - Foundation: `docs/architecture/02-foundation.md`
+   - Planning: `docs/architecture/03-planning.md`
+   - LLM Gateway: `docs/architecture/04-llm-gateway.md`
+   - Memory: `docs/architecture/05-memory.md`
+   - MCP & Tools: `docs/architecture/06-mcp-tools.md`
+   - Guardrails: `docs/architecture/07-guardrails.md`
+   - Event Bus: `docs/architecture/08-event-bus.md`
+   - Governance: `docs/architecture/09-governance.md`
+   - API Contracts: `docs/architecture/10-api-contracts.md`
 3. Đảm bảo code sắp viết **khớp** với interface, data flow, và contract đã mô tả trong tài liệu.
 4. Nếu tài liệu chưa có thiết kế chi tiết (`design.md`) cho module đó, phải báo cho người dùng biết trước khi code.
 
