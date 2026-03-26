@@ -708,12 +708,16 @@ Layer 6: Governance ---- Immutable audit logs + Data classification + Retention 
 
 | Component | Tài liệu | Mô tả |
 |-----------|----------|-------|
+| **Foundation** | [`foundation.md`](foundation.md) | Project setup, pyproject.toml, config management, DI/wiring, Alembic, app lifecycle |
+| **Event Bus & SSE** | [`event-bus.md`](event-bus.md) | Event Bus (Redis Pub/Sub), SSE streaming, Task Queue (Redis Streams), worker pool |
 | **Guardrails** | [`guardrails.md`](guardrails.md) | Input/output validation, prompt injection, policy engine |
 | **Memory** | [`memory.md`](memory.md) | Memory stack, vector store, context management, shared memory |
 | **Planning** | [`planning.md`](planning.md) | ReAct, Plan-then-Execute, checkpoint, budget, orchestration |
 | **MCP & Tools** | [`mcp-tools.md`](mcp-tools.md) | MCP client, tool registry, discovery, invocation, sandbox |
 | **Governance** | [`governance.md`](governance.md) | Audit consolidation, retention policies, data classification, lineage |
-| **LLM Gateway** | [`llm-gateway.md`](llm-gateway.md) | Provider abstraction, token tracking, failover, error taxonomy (PENDING — validate via spike) |
+| **LLM Gateway** | [`llm-gateway.md`](llm-gateway.md) | Provider abstraction, token tracking, failover, error taxonomy |
+| **Data Models** | [`data-models.md`](data-models.md) | Canonical data models, DB schema, Redis schema, enums, state machine, error taxonomy |
+| **API Contracts** | [`api-contracts.md`](api-contracts.md) | REST endpoints, request/response schemas, SSE streaming, auth middleware, rate limiting |
 
 ---
 

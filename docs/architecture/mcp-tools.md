@@ -306,33 +306,47 @@ class SchemaConverter:
 
     def to_anthropic(self, tool: ToolInfo) -> dict:
         """
-        MCP tool → Anthropic tool_use format:
-        {
-            "name": "create_issue",
-            "description": "Create a new issue in a GitHub repository",
-            "input_schema": {
-                "type": "object",
-                "properties": { "repo": {"type": "string"}, "title": {"type": "string"} },
-                "required": ["repo", "title"]
-            }
-        }
+        MCP tool → Anthropic tool_use format.
+        Anthropic expects JSONSchema in input_schema field directly.
+        MCP tool schema IS JSONSchema → minimal transformation needed.
         """
+        # MCP tool.inputSchema is already JSONSchema — Anthropic accepts it directly
+        schema = tool.input_schema.copy()
+
+        # Ensure required top-level fields
+        schema.setdefault("type", "object")
+        schema.setdefault("properties", {})
+
+        return {
+            "name": self._sanitize_name(tool.name, tool.namespace),
+            "description": self._build_description(tool),
+            "input_schema": schema,
+        }
 
     def to_openai(self, tool: ToolInfo) -> dict:
-        """
-        MCP tool → OpenAI function calling format:
-        {
+        """MCP tool → OpenAI function calling format (Phase 2)."""
+        schema = tool.input_schema.copy()
+        schema.setdefault("type", "object")
+
+        return {
             "type": "function",
             "function": {
-                "name": "create_issue",
-                "description": "...",
-                "parameters": { ... (JSONSchema) }
-            }
+                "name": self._sanitize_name(tool.name, tool.namespace),
+                "description": self._build_description(tool),
+                "parameters": schema,
+            },
         }
-        """
 
     def to_google(self, tool: ToolInfo) -> dict:
-        """MCP tool → Gemini function declaration format."""
+        """MCP tool → Gemini function declaration format (Phase 2)."""
+        schema = tool.input_schema.copy()
+        schema.setdefault("type", "object")
+
+        return {
+            "name": self._sanitize_name(tool.name, tool.namespace),
+            "description": self._build_description(tool),
+            "parameters": schema,
+        }
 
     def convert(self, tool: ToolInfo, provider: str) -> dict:
         """Dispatch to the correct converter based on LLM provider."""
@@ -341,13 +355,64 @@ class SchemaConverter:
             "openai": self.to_openai,
             "google": self.to_google,
         }
-        return converters[provider](tool)
+        converter = converters.get(provider)
+        if not converter:
+            raise ValueError(f"Unknown LLM provider: {provider}")
+        return converter(tool)
+
+    def convert_batch(self, tools: list[ToolInfo], provider: str) -> list[dict]:
+        """Convert multiple tools for a single LLM call."""
+        return [self.convert(tool, provider) for tool in tools]
 
     def from_llm_tool_call(self, raw_call: dict, provider: str) -> ToolCall:
         """
-        Parse LLM tool_call response back into our normalized ToolCall model.
+        Parse LLM tool_call response back into normalized ToolCall model.
         Each provider returns tool calls in a different format.
         """
+        match provider:
+            case "anthropic":
+                # Anthropic: content_block with type="tool_use"
+                # Already parsed by LLM Gateway into ToolCall format
+                return ToolCall(
+                    id=raw_call["id"],
+                    name=raw_call["name"],
+                    arguments=raw_call.get("input", {}),
+                )
+            case "openai":
+                # OpenAI: {"id", "function": {"name", "arguments": JSON string}}
+                return ToolCall(
+                    id=raw_call["id"],
+                    name=raw_call["function"]["name"],
+                    arguments=json.loads(raw_call["function"]["arguments"]),
+                )
+            case _:
+                raise ValueError(f"Unknown provider: {provider}")
+
+    def _sanitize_name(self, name: str, namespace: str) -> str:
+        """
+        Build tool name for LLM. Must be unique and valid identifier.
+
+        Strategy:
+        - Use namespace prefix to avoid collisions: "github__create_issue"
+        - Replace invalid chars: ':', '-', '.' → '_'
+        - Anthropic allows: [a-zA-Z0-9_-], max 64 chars
+
+        Example: namespace="mcp:github", name="create_issue" → "github__create_issue"
+        """
+        # Extract short namespace: "mcp:github" → "github"
+        short_ns = namespace.split(":")[-1] if ":" in namespace else namespace
+        full_name = f"{short_ns}__{name}"
+        # Sanitize: only allow alphanumeric, underscore, hyphen
+        sanitized = re.sub(r"[^a-zA-Z0-9_-]", "_", full_name)
+        return sanitized[:64]
+
+    def _build_description(self, tool: ToolInfo) -> str:
+        """
+        Build description string for LLM.
+        Include namespace context so LLM understands which service this tool belongs to.
+        """
+        prefix = f"[{tool.namespace}] " if tool.namespace else ""
+        return f"{prefix}{tool.description}"
 ```
 
 **Tại sao cần converter?**
@@ -389,6 +454,21 @@ class MCPClientManager:
         3. If not exists → create via transport manager
         4. If unhealthy → reconnect
         """
+        key = (tenant_id, server_id)
+        client = await self._pool.get(tenant_id, server_id)
+
+        if client is not None:
+            health = await self._health_monitor.get_cached_status(server_id)
+            if health and health.status != "unhealthy":
+                return client
+            # Unhealthy → close and reconnect
+            await self._pool.remove(tenant_id, server_id)
+            await client.close()
+
+        # Create new connection
+        server_config = await self._load_server_config(tenant_id, server_id)
+        client = await self.connect_server(server_config)
+        return client
 
     async def connect_server(self, server_config: MCPServerConfig) -> MCPClient:
         """
@@ -399,12 +479,62 @@ class MCPClientManager:
         4. Add to connection pool
         5. Start health monitoring
         """
+        # 1. Create transport
+        transport = await self._transport_manager.create_transport(server_config)
+
+        # 2. Create MCP client with transport
+        client = MCPClient(transport)
+
+        # 3. Initialize handshake
+        init_result = await client.initialize(
+            client_info={"name": "agent-platform", "version": "1.0"},
+            capabilities={"tools": True, "resources": True},
+        )
+        server_capabilities = init_result.capabilities
+
+        # 4. Send initialized notification
+        await client.initialized()
+
+        # 5. Add to pool
+        await self._pool.put(
+            server_config.tenant_id,
+            server_config.id,
+            client,
+        )
+
+        # 6. Update server status
+        server_config.status = "connected"
+        server_config.last_connected_at = datetime.utcnow()
+
+        # 7. Start health monitoring for this server
+        await self._health_monitor.register(
+            server_config.tenant_id,
+            server_config.id,
+            interval_seconds=server_config.health_check_interval_seconds,
+        )
+
+        return client
 
     async def disconnect_server(self, tenant_id: str, server_id: str) -> None:
         """Gracefully close connection and remove from pool."""
+        await self._health_monitor.unregister(server_id)
+        client = await self._pool.get(tenant_id, server_id)
+        if client:
+            await client.close()
+            await self._pool.remove(tenant_id, server_id)
 
     async def disconnect_all(self, tenant_id: str) -> None:
         """Disconnect all servers for a tenant (cleanup on tenant deactivation)."""
+        stats = await self._pool.get_stats()
+        for server_id in stats.get(tenant_id, {}).keys():
+            await self.disconnect_server(tenant_id, server_id)
+
+    async def close_all(self) -> None:
+        """Shutdown: disconnect every server across all tenants."""
+        all_stats = await self._pool.get_stats()
+        for tenant_id, servers in all_stats.items():
+            for server_id in servers:
+                await self.disconnect_server(tenant_id, server_id)
 ```
 
 #### 2.2.2 Transport Manager
@@ -621,6 +751,16 @@ class InvocationHandler:
     Includes timeout, retry, circuit breaker, and cost tracking.
     """
 
+    def __init__(
+        self,
+        circuit_breaker: CircuitBreaker,
+        result_processor: ResultProcessor,
+        tracer,
+    ):
+        self._cb = circuit_breaker
+        self._processor = result_processor
+        self._tracer = tracer
+
     async def invoke(
         self,
         client: MCPClient,
@@ -629,15 +769,85 @@ class InvocationHandler:
         timeout_ms: int | None = None,
     ) -> ToolResult:
         """
-        1. Validate input against tool's input_schema
-        2. Check circuit breaker (is this server in cooldown?)
-        3. Start OTel span
-        4. Send tools/call via MCP protocol
-        5. Await result with timeout
-        6. Process result (normalize, truncate if too large)
-        7. Record metrics (latency, success/failure)
-        8. Return normalized ToolResult
+        Full invocation pipeline with timeout, circuit breaker, retry, and metrics.
         """
+        effective_timeout = timeout_ms or tool_info.default_timeout_ms
+        server_id = tool_info.server_id
+        start = time.monotonic()
+
+        # 1. Check circuit breaker
+        if not await self._cb.allow_request(server_id):
+            return ToolResult(
+                tool_call_id=tool_call.id,
+                tool_name=tool_call.name,
+                content=f"Tool server temporarily unavailable (circuit breaker open for {server_id})",
+                is_error=True,
+                metadata={"circuit_breaker": "open"},
+                latency_ms=0,
+            )
+
+        # 2. Execute with retry (if idempotent)
+        try:
+            with self._tracer.start_as_current_span("tool.invoke") as span:
+                span.set_attribute("tool.name", tool_call.name)
+                span.set_attribute("tool.server_id", server_id)
+
+                if tool_info.idempotent and tool_info.max_retries > 0:
+                    raw_result = await self._invoke_with_retry(
+                        client, tool_call, tool_info, effective_timeout,
+                    )
+                else:
+                    raw_result = await self._invoke_with_timeout(
+                        client, tool_call.name, tool_call.arguments, effective_timeout,
+                    )
+
+                latency_ms = (time.monotonic() - start) * 1000
+                span.set_attribute("tool.latency_ms", latency_ms)
+
+                # 3. Record success
+                await self._cb.record_success(server_id)
+
+                # 4. Process result
+                result = await self._processor.process(raw_result, tool_info)
+                result.tool_call_id = tool_call.id
+                result.latency_ms = latency_ms
+                return result
+
+        except ToolTimeoutError:
+            latency_ms = (time.monotonic() - start) * 1000
+            await self._cb.record_failure(server_id)
+            return ToolResult(
+                tool_call_id=tool_call.id,
+                tool_name=tool_call.name,
+                content=f"Tool '{tool_call.name}' timed out after {effective_timeout}ms",
+                is_error=True,
+                metadata={"error_category": "tool_timeout"},
+                latency_ms=latency_ms,
+            )
+
+        except MCPConnectionError as e:
+            latency_ms = (time.monotonic() - start) * 1000
+            await self._cb.record_failure(server_id)
+            return ToolResult(
+                tool_call_id=tool_call.id,
+                tool_name=tool_call.name,
+                content=f"Connection error calling '{tool_call.name}': {e}",
+                is_error=True,
+                metadata={"error_category": "tool_connection_error"},
+                latency_ms=latency_ms,
+            )
+
+        except Exception as e:
+            latency_ms = (time.monotonic() - start) * 1000
+            await self._cb.record_failure(server_id)
+            return ToolResult(
+                tool_call_id=tool_call.id,
+                tool_name=tool_call.name,
+                content=f"Error calling '{tool_call.name}': {e}",
+                is_error=True,
+                metadata={"error_category": "tool_execution_error"},
+                latency_ms=latency_ms,
+            )
 
     async def _invoke_with_timeout(self, client, name, arguments, timeout_ms) -> dict:
         """MCP tools/call with configurable timeout."""
@@ -647,18 +857,42 @@ class InvocationHandler:
         except asyncio.TimeoutError:
             raise ToolTimeoutError(f"Tool {name} timed out after {timeout_ms}ms")
 
-    async def _invoke_with_retry(self, client, tool_call, tool_info) -> ToolResult:
+    async def _invoke_with_retry(self, client, tool_call, tool_info, timeout_ms) -> dict:
         """
-        Retry logic:
-        - Only retry if tool is marked idempotent
+        Retry logic for idempotent tools:
         - Exponential backoff: 1s, 2s, 4s
-        - Max retries from tool config
-        - Different errors get different retry behavior:
-          - Timeout → retry (if idempotent)
-          - Server error (500) → retry
-          - Client error (400) → do NOT retry
-          - Connection error → reconnect + retry
+        - Max retries from server config
+        - Timeout → retry
+        - Server error (MCP error code) → retry
+        - Client error (invalid params) → do NOT retry
+        - Connection error → raise (let caller handle reconnect)
         """
+        max_retries = tool_info.max_retries or 2
+        backoff_base = 1.0
+        last_error = None
+
+        for attempt in range(1 + max_retries):
+            try:
+                return await self._invoke_with_timeout(
+                    client, tool_call.name, tool_call.arguments, timeout_ms,
+                )
+            except ToolTimeoutError as e:
+                last_error = e
+                if attempt < max_retries:
+                    wait = backoff_base * (2 ** attempt)
+                    await asyncio.sleep(wait)
+                    continue
+            except MCPServerError as e:
+                # MCP server returned error — retry if not client fault
+                if e.code and e.code >= -32600:  # client errors in JSON-RPC
+                    raise  # don't retry client errors
+                last_error = e
+                if attempt < max_retries:
+                    wait = backoff_base * (2 ** attempt)
+                    await asyncio.sleep(wait)
+                    continue
+
+        raise last_error
 ```
 
 **Circuit Breaker:**
