@@ -1,7 +1,45 @@
 # Kiến Trúc Tổng Quan: Agent Serving Platform
 
 > **Phiên bản:** 3.0
-> **Ngày cập nhật:** 2026-03-25
+> **Ngày cập nhật:** 2026-03-26
+
+---
+
+## Hướng dẫn đọc tài liệu (Reading Guide)
+
+Tài liệu kiến trúc gồm **10 files**. Đọc theo thứ tự dưới đây để hiểu hệ thống từ tổng quan → chi tiết, mỗi doc xây trên kiến thức từ doc trước.
+
+```
+ ① 00-overview.md          Bức tranh toàn cảnh — đọc trước nhất
+        │
+ ② data-models.md          "Từ vựng" — entities, enums, DB schema, state machine
+        │
+ ③ foundation.md           "Nền móng" — project structure, config, DI, dependencies
+        │
+        ├──────────── CORE RUNTIME (đọc theo thứ tự) ────────────┐
+        │                                                          │
+ ④ planning.md             Execution Engine — ReAct loop, checkpoint, budget    │
+        │                                                          │
+ ⑤ llm-gateway.md          LLM calls — Anthropic SDK, streaming, retry, cost   │
+        │                                                          │
+ ⑥ memory.md               Context management — conversation buffer, summarizer │
+        │                                                          │
+ ⑦ mcp-tools.md            Tool system — MCP client, registry, invocation       │
+        │                                                          │
+        ├──────────── CROSS-CUTTING (đọc song song được) ────────┤
+        │                                                          │
+ ⑧ guardrails.md           Safety — validation, injection detection, HITL       │
+        │                                                          │
+ ⑨ event-bus.md            Event Bus, SSE streaming, Task Queue workers         │
+        │                                                          │
+ ⑩ governance.md           Audit, retention, classification, cost tracking      │
+        │                                                          │
+        ├──────────── API SURFACE ───────────────────────────────┘
+        │
+ ⑪ api-contracts.md        REST endpoints, auth middleware, SSE wire protocol
+```
+
+**Nếu ít thời gian**, chỉ đọc ①→②→④ là nắm được 70% hệ thống.
 
 ---
 
