@@ -79,7 +79,23 @@ Sau khi hoàn thành toàn bộ (code + test pass), phải trình bày **bảng 
 
 ---
 
-## 6. Auto-commit & push khi thay đổi logic
+## 6. Kiểm tra Infrastructure trước khi chạy service
+
+**TRƯỚC KHI khởi động bất kỳ service nào**, bắt buộc phải:
+
+1. Chạy `sc infra list` để kiểm tra danh sách infrastructure services hiện có trên Service Controller.
+2. Đối chiếu với danh sách infrastructure mà project cần (PostgreSQL, Redis, Milvus, Elasticsearch, MinIO, OTEL Collector, ...).
+3. Nếu **thiếu** infrastructure cần thiết, **DỪNG LẠI** và khai báo cho người dùng danh sách services cần bổ sung theo format:
+
+| Service | Image | Port(s) | Mô tả |
+|---------|-------|---------|-------|
+| `tên_service` | `docker_image:tag` | `host_port:container_port` | Vai trò trong project |
+
+Chỉ tiến hành khởi động service **SAU KHI** tất cả infrastructure cần thiết đã sẵn sàng trên Service Controller.
+
+---
+
+## 7. Auto-commit & push khi thay đổi logic
 
 Sau khi hoàn thành thay đổi, **TỰ ĐỘNG commit và push** nếu thay đổi thuộc một trong các loại sau:
 

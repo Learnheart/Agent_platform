@@ -64,7 +64,7 @@ class TestGovernanceSettings:
 class TestSettings:
     def test_defaults(self) -> None:
         with patch.dict(os.environ, {}, clear=False):
-            s = Settings()
+            s = Settings(_env_file=None)
             assert s.app_name == "agent-platform"
             assert s.environment == "development"
             assert s.debug is False
@@ -76,7 +76,7 @@ class TestSettings:
             "APP_LOG_LEVEL": "DEBUG",
         }
         with patch.dict(os.environ, env, clear=False):
-            s = Settings()
+            s = Settings(_env_file=None)
             assert s.environment == "production"
             assert s.debug is True
             assert s.log_level == "DEBUG"
@@ -88,7 +88,7 @@ class TestSettings:
             "APP_DATABASE__PASSWORD": "prod-secret",
         }
         with patch.dict(os.environ, env, clear=False):
-            s = Settings()
+            s = Settings(_env_file=None)
             assert s.database.host == "prod-db.example.com"
             assert s.database.port == 5433
             assert s.database.password == "prod-secret"

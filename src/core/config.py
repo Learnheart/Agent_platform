@@ -27,7 +27,7 @@ class DatabaseSettings(BaseSettings):
     port: int = 5432
     name: str = "agent_platform"
     user: str = "postgres"
-    password: str = ""
+    password: str = "postgres"
     pool_min_size: int = 5
     pool_max_size: int = 20
     echo: bool = False
